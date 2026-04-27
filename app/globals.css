@@ -79,3 +79,14 @@
     -webkit-touch-callout: none;
   }
 }
+
+@layer utilities {
+  /* SectionTabs 가로 스크롤 시 스크롤바 숨김 */
+  .scrollbar-hidden {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hidden::-webkit-scrollbar {
+    display: none;
+  }
+}
