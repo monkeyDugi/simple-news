@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git branch:*)",
+      "Bash(git show:*)",
+      "Bash(ls:*)",
+      "Bash(pwd)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(which:*)",
+      "Bash(file:*)",
+      "Bash(tree:*)",
+      "Bash(node -v)",
+      "Bash(node --version)",
+      "Bash(npm -v)",
+      "Bash(npm --version)",
+      "Bash(supabase --version)",
+      "Bash(docker --version)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ],
+    "ask": [
+      "Bash(git restore:*)",
+      "Bash(git checkout:*)",
+      "Bash(npm:*)",
+      "Bash(npx:*)",
+      "Bash(supabase:*)",
+      "Bash(curl:*)",
+      "Bash(nvm:*)",
+      "Bash(tsx:*)"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(git push --force:*)",
+      "Bash(git reset --hard:*)",
+      "Read(./.env)",
+      "Read(./.env.local)",
+      "Read(./.env.*.local)",
+      "Read(./firebase-service-account*.json)"
+    ]
+  }
+}

@@ -1,0 +1,1372 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Simple News — UI/UX 시안 비교</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link rel="stylesheet" as="style" crossorigin
+  href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+  :root {
+    /* Tone A: Ivory (제안) */
+    --ivory-bg: #faf8f3;
+    --ivory-card: #ffffff;
+    /* Tone B: White (flow-pick-view) */
+    --white-bg: #ffffff;
+    --white-card: #ffffff;
+    /* 공통 */
+    --text-1: #191f28;
+    --text-2: #4e5968;
+    --text-3: #8b95a1;
+    --text-4: #b0b8c1;
+    --border: #f2f4f6;
+    --accent-google: #1a73e8;
+    --accent-toss: #3182f6;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #1a1a1a;
+    color: #fff;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+  }
+
+  /* ──── 페이지 헤더 ──── */
+  .page-header {
+    padding: 40px 32px 24px;
+    border-bottom: 1px solid #2a2a2a;
+    text-align: center;
+  }
+  .page-header h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+  .page-header p { color: #999; font-size: 14px; }
+
+  /* ──── 섹션 ──── */
+  section.compare {
+    padding: 48px 32px;
+    border-bottom: 1px solid #2a2a2a;
+  }
+  section.compare > h2 {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: #fff;
+  }
+  section.compare > .desc {
+    font-size: 14px;
+    color: #999;
+    margin-bottom: 32px;
+    max-width: 720px;
+    line-height: 1.6;
+  }
+  section.compare > .desc strong { color: #ffd54f; }
+
+  /* ──── frame 가로 정렬 ──── */
+  .frames {
+    display: flex;
+    gap: 24px;
+    overflow-x: auto;
+    padding-bottom: 24px;
+    scroll-snap-type: x mandatory;
+  }
+  .frame-wrap {
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+  }
+  .frame-label {
+    margin-bottom: 12px;
+    font-size: 13px;
+    color: #fff;
+    font-weight: 600;
+  }
+  .frame-label .star { color: #ffd54f; margin-left: 6px; }
+  .frame-label .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    background: #2a2a2a;
+    border-radius: 4px;
+    font-size: 11px;
+    color: #999;
+    margin-left: 6px;
+    font-weight: 500;
+  }
+  .frame-note {
+    margin-top: 12px;
+    font-size: 12px;
+    color: #999;
+    width: 375px;
+    line-height: 1.5;
+  }
+
+  /* ──── 폰 frame ──── */
+  .phone {
+    width: 375px;
+    height: 750px;
+    background: var(--white-bg);
+    border-radius: 28px;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    color: var(--text-1);
+  }
+  .phone.ivory { background: var(--ivory-bg); }
+
+  /* status bar */
+  .status-bar {
+    height: 44px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-1);
+    background: inherit;
+  }
+  .status-bar .right { display: flex; gap: 6px; align-items: center; font-size: 12px; }
+
+  .phone-content {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .phone-content::-webkit-scrollbar { width: 0; }
+
+  /* ──── 공통 컴포넌트 ──── */
+
+  /* 헤더 */
+  .head {
+    padding: 8px 20px 16px;
+  }
+  .head h1 {
+    font-size: 24px;
+    font-weight: 800;
+    line-height: 1.3;
+    letter-spacing: -0.02em;
+  }
+  .head .date {
+    font-size: 13px;
+    color: var(--text-3);
+    margin-top: 4px;
+    font-weight: 500;
+  }
+
+  /* 섹션 탭 (가로 스크롤) */
+  .section-tabs {
+    display: flex;
+    gap: 8px;
+    padding: 8px 16px 12px;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--border);
+  }
+  .section-tabs::-webkit-scrollbar { height: 0; }
+  .section-tab {
+    flex: 0 0 auto;
+    padding: 8px 14px;
+    border: none;
+    background: transparent;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-3);
+    border-radius: 999px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .section-tab.active {
+    color: var(--text-1);
+    font-weight: 700;
+  }
+  .section-tab.active.pill {
+    background: var(--text-1);
+    color: #fff;
+  }
+
+  /* 카드 — 시안 A (AI 결론 1순위) */
+  .card-ai-first {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 12px;
+  }
+  .card-ai-first .thumb {
+    width: 64px;
+    height: 64px;
+    border-radius: 12px;
+    background: var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    flex-shrink: 0;
+  }
+  .card-ai-first .body { flex: 1; min-width: 0; }
+  .card-ai-first .label {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--accent-google);
+    background: #e8f0fe;
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-bottom: 8px;
+  }
+  .card-ai-first .conclusion {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-1);
+    line-height: 1.4;
+    letter-spacing: -0.01em;
+    margin-bottom: 6px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .card-ai-first .meta {
+    font-size: 12px;
+    color: var(--text-3);
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .card-ai-first .meta .dot { color: var(--text-4); }
+  .card-ai-first .original {
+    font-size: 13px;
+    color: var(--text-2);
+    margin-top: 4px;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* 카드 — 시안 B (원본 제목 1순위, flow-pick-view 패턴) */
+  .card-title-first {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 12px;
+  }
+  .card-title-first .thumb {
+    width: 90px;
+    height: 90px;
+    border-radius: 12px;
+    background: var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 36px;
+    flex-shrink: 0;
+  }
+  .card-title-first .body { flex: 1; min-width: 0; }
+  .card-title-first .title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-1);
+    line-height: 1.4;
+    margin-bottom: 4px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .card-title-first .time {
+    font-size: 11px;
+    color: var(--text-4);
+    margin-bottom: 6px;
+  }
+  .card-title-first .desc {
+    font-size: 13px;
+    color: var(--text-2);
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* 카드 — 시안 C (AI only — 원본 제목 제거) */
+  .card-ai-only {
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .card-ai-only .label {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--accent-google);
+    margin-bottom: 8px;
+    letter-spacing: 0.02em;
+  }
+  .card-ai-only .label::before { content: '● '; }
+  .card-ai-only .conclusion {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--text-1);
+    line-height: 1.45;
+    letter-spacing: -0.015em;
+    margin-bottom: 6px;
+  }
+  .card-ai-only .meta {
+    font-size: 12px;
+    color: var(--text-3);
+  }
+
+  /* 시간 그룹 헤더 */
+  .time-group {
+    padding: 16px 20px 8px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-3);
+    background: rgba(0,0,0,0.02);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  /* 5분 브리핑 큰 카드 */
+  .brief-card {
+    margin: 0 20px 12px;
+    padding: 20px;
+    background: var(--ivory-card);
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+  }
+  .brief-card.first { margin-top: 4px; }
+  .brief-card .row1 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .brief-card .num {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--accent-google);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .brief-card .sec {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--accent-google);
+  }
+  .brief-card .time {
+    font-size: 11px;
+    color: var(--text-4);
+    margin-left: auto;
+  }
+  .brief-card .conclusion {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--text-1);
+    line-height: 1.45;
+    letter-spacing: -0.015em;
+    margin-bottom: 8px;
+  }
+  .brief-card .original {
+    font-size: 13px;
+    color: var(--text-2);
+    line-height: 1.5;
+  }
+
+  /* 5분 브리핑 → 섹션 탐색 진입 영역 */
+  .brief-divider {
+    margin: 24px 20px 12px;
+    height: 1px;
+    background: var(--border);
+  }
+  .brief-explore-title {
+    padding: 8px 24px 12px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-2);
+  }
+  .section-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    padding: 0 20px 32px;
+  }
+  .section-pill {
+    padding: 14px;
+    background: var(--ivory-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .section-pill .icon { font-size: 20px; margin-bottom: 4px; display: block; }
+  .section-pill .name { font-size: 14px; font-weight: 600; color: var(--text-1); }
+  .section-pill .count { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+
+  /* 상단 토글 (시안 C — 하이브리드) */
+  .toggle-bar {
+    display: flex;
+    margin: 12px 20px 16px;
+    background: var(--border);
+    border-radius: 10px;
+    padding: 3px;
+  }
+  .toggle-btn {
+    flex: 1;
+    padding: 8px 0;
+    border: none;
+    background: transparent;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-3);
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .toggle-btn.active {
+    background: #fff;
+    color: var(--text-1);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+
+  /* ──── 상세 화면 ──── */
+  .detail-head {
+    padding: 16px 24px 12px;
+  }
+  .detail-back {
+    font-size: 24px;
+    color: var(--text-1);
+    margin-bottom: 16px;
+    cursor: pointer;
+    display: inline-block;
+  }
+  .detail-section {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--accent-google);
+    margin-bottom: 8px;
+  }
+  .detail-title {
+    font-size: 24px;
+    font-weight: 800;
+    color: var(--text-1);
+    line-height: 1.3;
+    letter-spacing: -0.02em;
+    margin-bottom: 8px;
+  }
+  .detail-meta {
+    font-size: 12px;
+    color: var(--text-3);
+    margin-bottom: 24px;
+  }
+
+  .conclusion-block {
+    margin: 0 24px 24px;
+    padding: 20px;
+    background: linear-gradient(135deg, #e8f0fe 0%, #f3f8ff 100%);
+    border-radius: 16px;
+  }
+  .conclusion-block .label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--accent-google);
+    margin-bottom: 8px;
+    letter-spacing: 0.05em;
+  }
+  .conclusion-block .text {
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.5;
+    color: var(--text-1);
+    letter-spacing: -0.01em;
+  }
+
+  .more-btn {
+    display: block;
+    margin: 0 24px 24px;
+    padding: 14px;
+    background: transparent;
+    border: 1.5px dashed var(--border);
+    border-radius: 12px;
+    color: var(--text-2);
+    font-size: 14px;
+    font-weight: 600;
+    text-align: center;
+    cursor: pointer;
+  }
+
+  .summary-block {
+    padding: 0 24px 16px;
+  }
+  .summary-block .q {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--accent-google);
+    margin-bottom: 6px;
+    margin-top: 20px;
+  }
+  .summary-block .a {
+    font-size: 15px;
+    color: var(--text-1);
+    line-height: 1.7;
+  }
+  .term {
+    color: var(--accent-google);
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    font-weight: 600;
+  }
+
+  .easy-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    background: #e8f0fe;
+    color: var(--accent-google);
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    margin-left: 8px;
+    cursor: pointer;
+  }
+
+  .term-list {
+    margin: 16px 24px 24px;
+    padding: 16px;
+    background: rgba(0,0,0,0.02);
+    border-radius: 12px;
+  }
+  .term-list h4 {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-2);
+    margin-bottom: 12px;
+    letter-spacing: 0.05em;
+  }
+  .term-item {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .term-item:last-child { border-bottom: none; }
+  .term-item .word {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--accent-google);
+    margin-bottom: 2px;
+  }
+  .term-item .def {
+    font-size: 13px;
+    color: var(--text-2);
+    line-height: 1.5;
+  }
+
+  .original-cta {
+    margin: 16px 24px 32px;
+    padding: 14px;
+    background: var(--text-1);
+    color: #fff;
+    border: none;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    text-align: center;
+    cursor: pointer;
+  }
+
+  /* ──── footer ──── */
+  footer.tail {
+    padding: 60px 32px;
+    text-align: center;
+    color: #666;
+    font-size: 13px;
+  }
+
+  /* 다크 모드 frame */
+  .phone.dark {
+    background: #0f0f0f;
+    color: #e8e8e8;
+  }
+  .phone.dark .status-bar { color: #e8e8e8; }
+  .phone.dark .head h1 { color: #fff; }
+  .phone.dark .head .date { color: #999; }
+
+  @media (max-width: 900px) {
+    .frames { padding-left: 0; padding-right: 0; }
+    section.compare { padding: 32px 16px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="page-header">
+  <h1>Simple News — UI/UX 시안 비교 프로토타입</h1>
+  <p>좌우로 스크롤해서 시안을 비교해줘. ⭐는 내가 추천하는 안.</p>
+</header>
+
+<!-- ─────────────────────────────────────── -->
+<!-- 섹션 1: 홈 화면 IA -->
+<!-- ─────────────────────────────────────── -->
+<section class="compare">
+  <h2>1. 홈 화면 IA — 앱 켰을 때 뭐가 보이나?</h2>
+  <p class="desc">
+    출퇴근 5분 비전을 어떻게 화면에 풀까. <strong>A는 AI가 큐레이션한 5건이 메인</strong>이라 결정 부담 없이 바로 핵심.
+    <strong>B는 익숙한 섹션 탭 구조</strong>(flow-pick-view와 같음). <strong>C는 둘 다 토글</strong>.
+  </p>
+
+  <div class="frames">
+
+    <!-- 시안 A: 5분 브리핑 메인 -->
+    <div class="frame-wrap">
+      <div class="frame-label">시안 A — 5분 브리핑 메인 <span class="star">⭐</span><span class="badge">추천</span></div>
+      <div class="phone ivory">
+        <div class="status-bar">
+          <span>9:24</span>
+          <span class="right">📶 75%</span>
+        </div>
+        <div class="phone-content">
+          <div class="head">
+            <h1>☕ 오늘의 5분 브리핑</h1>
+            <div class="date">4월 26일 금요일 · 출근길용</div>
+          </div>
+
+          <div class="brief-card first">
+            <div class="row1">
+              <span class="num">1</span>
+              <span class="sec">경제</span>
+              <span class="time">12분 전</span>
+            </div>
+            <div class="conclusion">삼성이 칩 잘 팔려서 4분기 실적이 크게 나아졌어요</div>
+            <div class="original">삼성전자, 4분기 영업이익 10조원 돌파</div>
+          </div>
+
+          <div class="brief-card">
+            <div class="row1">
+              <span class="num">2</span>
+              <span class="sec">세계</span>
+              <span class="time">1시간 전</span>
+            </div>
+            <div class="conclusion">미국이 금리 안 올렸고 곧 내릴 수도 있어요</div>
+            <div class="original">Fed, 기준금리 5.25% 동결... 3분기 인하 시사</div>
+          </div>
+
+          <div class="brief-card">
+            <div class="row1">
+              <span class="num">3</span>
+              <span class="sec">해외증시</span>
+              <span class="time">3시간 전</span>
+            </div>
+            <div class="conclusion">엔비디아 칩 수요 둔화 우려에 주가 8% 빠졌어요</div>
+            <div class="original">엔비디아 시간외 8% 급락... AI 칩 수요 둔화 우려</div>
+          </div>
+
+          <div class="brief-card">
+            <div class="row1">
+              <span class="num">4</span>
+              <span class="sec">정치</span>
+              <span class="time">5시간 전</span>
+            </div>
+            <div class="conclusion">AI 만드는 회사들에 안전 검사 의무가 생겼어요</div>
+            <div class="original">국회, AI 기본법 본회의 통과... 내년 1월 시행</div>
+          </div>
+
+          <div class="brief-card">
+            <div class="row1">
+              <span class="num">5</span>
+              <span class="sec">IT</span>
+              <span class="time">어제 22:30</span>
+            </div>
+            <div class="conclusion">OpenAI가 더 똑똑한 AI 새로 내놨어요. 추론에 강해요</div>
+            <div class="original">OpenAI, GPT-6 공개... 추론 능력 30% 향상</div>
+          </div>
+
+          <div class="brief-divider"></div>
+          <div class="brief-explore-title">📂 섹션별로 더 보기</div>
+          <div class="section-grid">
+            <button class="section-pill"><span class="icon">💼</span><div class="name">경제</div><div class="count">신규 12건</div></button>
+            <button class="section-pill"><span class="icon">🌏</span><div class="name">세계</div><div class="count">신규 9건</div></button>
+            <button class="section-pill"><span class="icon">📈</span><div class="name">해외증시</div><div class="count">신규 7건</div></button>
+            <button class="section-pill"><span class="icon">🏛️</span><div class="name">정치</div><div class="count">신규 5건</div></button>
+            <button class="section-pill"><span class="icon">👥</span><div class="name">사회</div><div class="count">신규 8건</div></button>
+            <button class="section-pill"><span class="icon">🎨</span><div class="name">생활/문화</div><div class="count">신규 4건</div></button>
+            <button class="section-pill"><span class="icon">💻</span><div class="name">IT/과학</div><div class="count">신규 7건</div></button>
+          </div>
+        </div>
+      </div>
+      <div class="frame-note">
+        앱 켜면 5건 끝. 30초 안에 핵심 파악 가능. 시간 여유 있으면 아래 섹션으로 깊이 탐색.
+      </div>
+    </div>
+
+    <!-- 시안 B: 섹션 탭 메인 (flow-pick-view 동일) -->
+    <div class="frame-wrap">
+      <div class="frame-label">시안 B — 섹션 탭 메인 <span class="badge">flow-pick-view와 동일</span></div>
+      <div class="phone">
+        <div class="status-bar">
+          <span>9:24</span>
+          <span class="right">📶 75%</span>
+        </div>
+        <div class="phone-content">
+          <div class="section-tabs">
+            <button class="section-tab active">경제</button>
+            <button class="section-tab">세계</button>
+            <button class="section-tab">해외증시</button>
+            <button class="section-tab">정치</button>
+            <button class="section-tab">사회</button>
+            <button class="section-tab">생활</button>
+            <button class="section-tab">IT</button>
+          </div>
+
+          <div class="card-title-first">
+            <div class="thumb">📊</div>
+            <div class="body">
+              <div class="title">삼성전자, 4분기 영업이익 10조원 돌파</div>
+              <div class="time">12분 전</div>
+              <div class="desc">메모리반도체 가격 상승으로 실적이 크게 개선...</div>
+            </div>
+          </div>
+          <div class="card-title-first">
+            <div class="thumb">🏛️</div>
+            <div class="body">
+              <div class="title">Fed, 기준금리 5.25% 동결... 3분기 인하 시사</div>
+              <div class="time">1시간 전</div>
+              <div class="desc">파월 의장 "인플레이션 둔화 추세 확인됐다"</div>
+            </div>
+          </div>
+          <div class="card-title-first">
+            <div class="thumb">📉</div>
+            <div class="body">
+              <div class="title">엔비디아 시간외 8% 급락... AI 칩 수요 둔화 우려</div>
+              <div class="time">3시간 전</div>
+              <div class="desc">중국 시장 매출 감소가 발표 직후 영향...</div>
+            </div>
+          </div>
+          <div class="card-title-first">
+            <div class="thumb">🏛️</div>
+            <div class="body">
+              <div class="title">국회, AI 기본법 본회의 통과... 내년 1월 시행</div>
+              <div class="time">5시간 전</div>
+              <div class="desc">고위험 AI에 안전성 검사 의무화...</div>
+            </div>
+          </div>
+          <div class="card-title-first">
+            <div class="thumb">🤖</div>
+            <div class="body">
+              <div class="title">OpenAI, GPT-6 공개... 추론 능력 30% 향상</div>
+              <div class="time">어제 22:30</div>
+              <div class="desc">샘 알트만 "이전 모델 대비 큰 도약"</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="frame-note">
+        익숙하고 구현 쉬움. 다만 "어느 섹션부터?" 결정 부담 있고, 큐레이션 강점 안 살아남.
+      </div>
+    </div>
+
+    <!-- 시안 C: 하이브리드 -->
+    <div class="frame-wrap">
+      <div class="frame-label">시안 C — 상단 토글 (둘 다)</div>
+      <div class="phone ivory">
+        <div class="status-bar">
+          <span>9:24</span>
+          <span class="right">📶 75%</span>
+        </div>
+        <div class="phone-content">
+          <div class="head">
+            <h1>Simple News</h1>
+          </div>
+          <div class="toggle-bar">
+            <button class="toggle-btn active">☕ 5분 브리핑</button>
+            <button class="toggle-btn">📂 섹션별</button>
+          </div>
+
+          <div class="brief-card first">
+            <div class="row1">
+              <span class="num">1</span>
+              <span class="sec">경제</span>
+              <span class="time">12분 전</span>
+            </div>
+            <div class="conclusion">삼성이 칩 잘 팔려서 4분기 실적이 크게 나아졌어요</div>
+            <div class="original">삼성전자, 4분기 영업이익 10조원 돌파</div>
+          </div>
+          <div class="brief-card">
+            <div class="row1">
+              <span class="num">2</span>
+              <span class="sec">세계</span>
+              <span class="time">1시간 전</span>
+            </div>
+            <div class="conclusion">미국이 금리 안 올렸고 곧 내릴 수도 있어요</div>
+            <div class="original">Fed, 기준금리 5.25% 동결... 3분기 인하 시사</div>
+          </div>
+          <div class="brief-card">
+            <div class="row1">
+              <span class="num">3</span>
+              <span class="sec">해외증시</span>
+              <span class="time">3시간 전</span>
+            </div>
+            <div class="conclusion">엔비디아 칩 수요 둔화 우려에 주가 8% 빠졌어요</div>
+            <div class="original">엔비디아 시간외 8% 급락... AI 칩 수요 둔화 우려</div>
+          </div>
+          <div class="brief-card">
+            <div class="row1">
+              <span class="num">4</span>
+              <span class="sec">정치</span>
+              <span class="time">5시간 전</span>
+            </div>
+            <div class="conclusion">AI 만드는 회사들에 안전 검사 의무가 생겼어요</div>
+            <div class="original">국회, AI 기본법 본회의 통과... 내년 1월 시행</div>
+          </div>
+        </div>
+      </div>
+      <div class="frame-note">
+        사용자가 모드 선택. 자유도 ↑, 다만 두 흐름 다 유지해야 해서 IA가 살짝 무거움.
+      </div>
+    </div>
+
+  </div>
+</section>
+
+
+<!-- ─────────────────────────────────────── -->
+<!-- 섹션 2: 카드 정보 위계 -->
+<!-- ─────────────────────────────────────── -->
+<section class="compare">
+  <h2>2. 카드 정보 위계 — 어떤 텍스트가 가장 크게?</h2>
+  <p class="desc">
+    flow-pick-view는 <strong>원본 제목이 1순위</strong>(B). 근데 원본 제목은 가끔 자극적·낚시성. 우리 강점은 AI가 만든 한 줄 결론.
+    <strong>A는 AI 결론을 1순위로 올리고 원본 제목은 보조</strong>. <strong>C는 아예 원본 제목 제거</strong>(가장 과감).
+  </p>
+
+  <div class="frames">
+
+    <!-- A: AI 결론 1순위 -->
+    <div class="frame-wrap">
+      <div class="frame-label">시안 A — AI 결론 1순위 <span class="star">⭐</span><span class="badge">추천</span></div>
+      <div class="phone ivory">
+        <div class="status-bar"><span>9:24</span><span class="right">📶 75%</span></div>
+        <div class="phone-content">
+          <div class="head"><h1>경제</h1><div class="date">4월 26일</div></div>
+
+          <div class="card-ai-first">
+            <div class="thumb">📊</div>
+            <div class="body">
+              <span class="label">경제</span>
+              <div class="conclusion">삼성이 칩 잘 팔려서 4분기 실적이 크게 나아졌어요</div>
+              <div class="original">삼성전자, 4분기 영업이익 10조원 돌파</div>
+              <div class="meta"><span>한국경제</span><span class="dot">·</span><span>12분 전</span></div>
+            </div>
+          </div>
+          <div class="card-ai-first">
+            <div class="thumb">🏛️</div>
+            <div class="body">
+              <span class="label">세계</span>
+              <div class="conclusion">미국이 금리 안 올렸고 곧 내릴 수도 있어요</div>
+              <div class="original">Fed, 기준금리 5.25% 동결... 3분기 인하 시사</div>
+              <div class="meta"><span>연합뉴스</span><span class="dot">·</span><span>1시간 전</span></div>
+            </div>
+          </div>
+          <div class="card-ai-first">
+            <div class="thumb">📉</div>
+            <div class="body">
+              <span class="label">해외증시</span>
+              <div class="conclusion">엔비디아 AI 칩 수요 둔화 우려에 주가 8% 빠졌어요</div>
+              <div class="original">엔비디아 시간외 8% 급락... AI 칩 수요 둔화 우려</div>
+              <div class="meta"><span>한국경제</span><span class="dot">·</span><span>3시간 전</span></div>
+            </div>
+          </div>
+          <div class="card-ai-first">
+            <div class="thumb">🤖</div>
+            <div class="body">
+              <span class="label">IT</span>
+              <div class="conclusion">OpenAI가 더 똑똑한 AI 새로 내놨어요. 추론에 강해요</div>
+              <div class="original">OpenAI, GPT-6 공개... 추론 능력 30% 향상</div>
+              <div class="meta"><span>전자신문</span><span class="dot">·</span><span>어제</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="frame-note">
+        AI 결론을 굵고 큰 글씨, 원본 제목은 보조. 시그널이 한눈에. 단 AI 품질 나쁜 날엔 어색할 수 있음.
+      </div>
+    </div>
+
+    <!-- B: 원본 제목 1순위 (flow-pick-view) -->
+    <div class="frame-wrap">
+      <div class="frame-label">시안 B — 원본 제목 1순위 <span class="badge">flow-pick-view와 동일</span></div>
+      <div class="phone">
+        <div class="status-bar"><span>9:24</span><span class="right">📶 75%</span></div>
+        <div class="phone-content">
+          <div class="section-tabs">
+            <button class="section-tab active">경제</button>
+            <button class="section-tab">세계</button>
+            <button class="section-tab">해외증시</button>
+            <button class="section-tab">IT</button>
+          </div>
+
+          <div class="card-title-first">
+            <div class="thumb">📊</div>
+            <div class="body">
+              <div class="title">삼성전자, 4분기 영업이익 10조원 돌파</div>
+              <div class="time">12분 전</div>
+              <div class="desc">메모리반도체 가격 상승으로 실적이 크게 개선...</div>
+            </div>
+          </div>
+          <div class="card-title-first">
+            <div class="thumb">🏛️</div>
+            <div class="body">
+              <div class="title">Fed, 기준금리 5.25% 동결... 3분기 인하 시사</div>
+              <div class="time">1시간 전</div>
+              <div class="desc">파월 의장 "인플레이션 둔화 추세 확인됐다"</div>
+            </div>
+          </div>
+          <div class="card-title-first">
+            <div class="thumb">📉</div>
+            <div class="body">
+              <div class="title">엔비디아 시간외 8% 급락... AI 칩 수요 둔화 우려</div>
+              <div class="time">3시간 전</div>
+              <div class="desc">중국 시장 매출 감소가 발표 직후 영향...</div>
+            </div>
+          </div>
+          <div class="card-title-first">
+            <div class="thumb">🤖</div>
+            <div class="body">
+              <div class="title">OpenAI, GPT-6 공개... 추론 능력 30% 향상</div>
+              <div class="time">어제 22:30</div>
+              <div class="desc">샘 알트만 "이전 모델 대비 큰 도약"</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="frame-note">
+        익숙한 뉴스 카드 패턴. 원본 제목 = 정확함. 다만 광고성·자극적 제목 그대로 노출되는 게 약점.
+      </div>
+    </div>
+
+    <!-- C: AI only -->
+    <div class="frame-wrap">
+      <div class="frame-label">시안 C — AI 결론만 <span class="badge">가장 과감</span></div>
+      <div class="phone ivory">
+        <div class="status-bar"><span>9:24</span><span class="right">📶 75%</span></div>
+        <div class="phone-content">
+          <div class="head"><h1>경제</h1></div>
+
+          <div class="card-ai-only">
+            <span class="label">경제</span>
+            <div class="conclusion">삼성이 칩 잘 팔려서 4분기 실적이 크게 나아졌어요</div>
+            <div class="meta">한국경제 · 12분 전</div>
+          </div>
+          <div class="card-ai-only">
+            <span class="label">세계</span>
+            <div class="conclusion">미국이 금리 안 올렸고 곧 내릴 수도 있어요</div>
+            <div class="meta">연합뉴스 · 1시간 전</div>
+          </div>
+          <div class="card-ai-only">
+            <span class="label">해외증시</span>
+            <div class="conclusion">엔비디아 AI 칩 수요 둔화 우려에 주가 8% 빠졌어요</div>
+            <div class="meta">한국경제 · 3시간 전</div>
+          </div>
+          <div class="card-ai-only">
+            <span class="label">정치</span>
+            <div class="conclusion">AI 만드는 회사들에 안전 검사 의무가 생겼어요</div>
+            <div class="meta">동아일보 · 5시간 전</div>
+          </div>
+          <div class="card-ai-only">
+            <span class="label">IT</span>
+            <div class="conclusion">OpenAI가 더 똑똑한 AI 새로 내놨어요. 추론에 강해요</div>
+            <div class="meta">전자신문 · 어제</div>
+          </div>
+        </div>
+      </div>
+      <div class="frame-note">
+        썸네일·원본 제목 모두 제거. 텍스트만 미니멀. 가장 "심플". 출처 신뢰도 약점은 있음.
+      </div>
+    </div>
+
+  </div>
+</section>
+
+
+<!-- ─────────────────────────────────────── -->
+<!-- 섹션 3: 상세 페이지 -->
+<!-- ─────────────────────────────────────── -->
+<section class="compare">
+  <h2>3. 상세 페이지 — 정보 노출 방식</h2>
+  <p class="desc">
+    출퇴근 30초 사용자와 카페 5분 사용자가 다름.
+    <strong>A는 점진적 공개 (디폴트는 결론만, 더 보기 누르면 펼침)</strong>.
+    <strong>B는 한 화면에 다 노출 (flow-pick-view와 동일)</strong>.
+  </p>
+
+  <div class="frames">
+
+    <!-- A: 점진적 공개 -->
+    <div class="frame-wrap">
+      <div class="frame-label">시안 A — 점진적 공개 <span class="star">⭐</span><span class="badge">추천</span></div>
+      <div class="phone ivory">
+        <div class="status-bar"><span>9:24</span><span class="right">📶 75%</span></div>
+        <div class="phone-content">
+          <div class="detail-head">
+            <span class="detail-back">←</span>
+            <div class="detail-section">경제</div>
+            <div class="detail-title">삼성 실적 회복</div>
+            <div class="detail-meta">한국경제 · 김철수 기자 · 12분 전</div>
+          </div>
+          <div class="conclusion-block">
+            <div class="label">💡 한 줄 결론</div>
+            <div class="text">삼성이 칩 잘 팔려서 4분기 실적이 크게 나아졌어요. 다만 장기 둔화 우려는 있어요.</div>
+          </div>
+          <button class="more-btn">▼ 더 자세히 보기</button>
+          <div class="term-list" style="margin-top: 0;">
+            <h4>📚 어려운 용어</h4>
+            <div class="term-item">
+              <div class="word">영업이익</div>
+              <div class="def">회사가 본업으로 번 돈이에요. 회사 건강함의 지표.</div>
+            </div>
+            <div class="term-item">
+              <div class="word">메모리반도체</div>
+              <div class="def">스마트폰·컴퓨터의 기억력 같은 칩이에요.</div>
+            </div>
+          </div>
+          <button class="original-cta">📰 원문 기사 보기 →</button>
+        </div>
+      </div>
+      <div class="frame-note">
+        디폴트 화면 = 한 줄 결론 + 어려운 용어만. 30초에 핵심 파악. "더 자세히" 누르면 3단 요약 펼침.
+      </div>
+    </div>
+
+    <!-- A 펼친 상태 -->
+    <div class="frame-wrap">
+      <div class="frame-label">시안 A — 더 자세히 펼친 상태</div>
+      <div class="phone ivory">
+        <div class="status-bar"><span>9:24</span><span class="right">📶 75%</span></div>
+        <div class="phone-content">
+          <div class="detail-head">
+            <span class="detail-back">←</span>
+            <div class="detail-section">경제</div>
+            <div class="detail-title">삼성 실적 회복</div>
+            <div class="detail-meta">한국경제 · 김철수 기자 · 12분 전</div>
+          </div>
+          <div class="conclusion-block">
+            <div class="label">💡 한 줄 결론</div>
+            <div class="text">삼성이 칩 잘 팔려서 4분기 실적이 크게 나아졌어요.</div>
+          </div>
+          <div class="summary-block">
+            <div class="q">무슨 일이 있었나요? <span class="easy-badge">쉬운 설명</span></div>
+            <div class="a">삼성전자가 4분기 <span class="term">영업이익</span> 10조원을 달성했어요. 작년 같은 기간보다 두 배 가까이 늘어난 수치예요.</div>
+            <div class="q">어떤 영향을 미쳤나요?</div>
+            <div class="a"><span class="term">메모리반도체</span> 가격 상승으로 실적이 크게 개선되었어요. 주가도 발표 직후 4% 올랐어요.</div>
+            <div class="q">주요 반응은 어떤가요?</div>
+            <div class="a">투자자들은 긍정적이지만 일부 분석가는 "장기 경기 둔화 우려는 여전하다"고 봤어요.</div>
+          </div>
+          <div class="term-list">
+            <h4>📚 어려운 용어</h4>
+            <div class="term-item">
+              <div class="word">영업이익</div>
+              <div class="def">회사가 본업으로 번 돈이에요.</div>
+            </div>
+            <div class="term-item">
+              <div class="word">메모리반도체</div>
+              <div class="def">스마트폰·컴퓨터의 기억력 같은 칩이에요.</div>
+            </div>
+          </div>
+          <button class="original-cta">📰 원문 기사 보기 →</button>
+        </div>
+      </div>
+      <div class="frame-note">
+        "더 자세히" 누른 후. 3단 요약 + 핵심 용어 인라인 하이라이트 동시 노출.
+      </div>
+    </div>
+
+    <!-- B: 풀 노출 (flow-pick-view) -->
+    <div class="frame-wrap">
+      <div class="frame-label">시안 B — 한 화면 풀 노출 <span class="badge">flow-pick-view와 동일</span></div>
+      <div class="phone">
+        <div class="status-bar"><span>9:24</span><span class="right">📶 75%</span></div>
+        <div class="phone-content">
+          <div class="detail-head" style="padding-top: 24px;">
+            <div class="detail-title">삼성 실적 회복</div>
+          </div>
+          <div class="summary-block">
+            <div class="q">무슨 일이 있었나요? <span class="easy-badge">쉬운 설명</span></div>
+            <div class="a">삼성전자가 4분기 <span class="term">영업이익</span> 10조원을 달성했어요. 작년보다 두 배 늘었어요.</div>
+            <div class="q">어떤 영향을 미쳤나요?</div>
+            <div class="a"><span class="term">메모리반도체</span> 가격 상승으로 실적이 크게 개선되었어요.</div>
+            <div class="q">주요 반응은 어떤가요?</div>
+            <div class="a">투자자들은 긍정적이지만 장기 경기 둔화 우려도 있어요.</div>
+            <div class="q">한 줄로 정리하면?</div>
+            <div class="a">삼성전자는 지금 경기가 좋아서 실적이 나아졌어요.</div>
+          </div>
+          <button class="original-cta">📰 원문 기사 보기 →</button>
+        </div>
+      </div>
+      <div class="frame-note">
+        모든 정보 한 화면. 익숙하지만 정보 과부하 느낌. 한 줄 결론이 맨 아래라 강조 약함.
+      </div>
+    </div>
+
+  </div>
+</section>
+
+
+<!-- ─────────────────────────────────────── -->
+<!-- 섹션 4: 컬러 톤 & 다크모드 -->
+<!-- ─────────────────────────────────────── -->
+<section class="compare">
+  <h2>4. 컬러 톤 — 배경/강조 색</h2>
+  <p class="desc">
+    <strong>A: Ivory 베이스 + 구글 블루</strong> (지하철 눈부심 ↓, 따뜻한 톤).
+    <strong>B: 화이트 + 토스 블루</strong> (flow-pick-view).
+    <strong>C: 다크모드 자동</strong> (시스템 설정 따라).
+  </p>
+
+  <div class="frames">
+
+    <!-- A: Ivory + Google Blue -->
+    <div class="frame-wrap">
+      <div class="frame-label">시안 A — Ivory + Google Blue <span class="star">⭐</span><span class="badge">추천</span></div>
+      <div class="phone ivory">
+        <div class="status-bar"><span>9:24</span><span class="right">📶 75%</span></div>
+        <div class="phone-content">
+          <div class="head"><h1>☕ 오늘의 5분 브리핑</h1><div class="date">4월 26일 금요일</div></div>
+          <div class="brief-card first">
+            <div class="row1"><span class="num">1</span><span class="sec">경제</span><span class="time">12분 전</span></div>
+            <div class="conclusion">삼성이 칩 잘 팔려서 4분기 실적이 크게 나아졌어요</div>
+            <div class="original">삼성전자, 4분기 영업이익 10조원 돌파</div>
+          </div>
+          <div class="brief-card">
+            <div class="row1"><span class="num">2</span><span class="sec">세계</span><span class="time">1시간 전</span></div>
+            <div class="conclusion">미국이 금리 안 올렸고 곧 내릴 수도 있어요</div>
+            <div class="original">Fed, 기준금리 5.25% 동결... 3분기 인하 시사</div>
+          </div>
+          <div class="brief-card">
+            <div class="row1"><span class="num">3</span><span class="sec">해외증시</span><span class="time">3시간 전</span></div>
+            <div class="conclusion">엔비디아 AI 칩 수요 둔화 우려에 주가 8% 빠졌어요</div>
+            <div class="original">엔비디아 시간외 8% 급락... AI 칩 수요 둔화 우려</div>
+          </div>
+        </div>
+      </div>
+      <div class="frame-note">
+        #faf8f3 ivory. 흰색보다 0.5단계 따뜻함. 카드는 흰색이라 입체감 살아남.
+      </div>
+    </div>
+
+    <!-- B: White + Toss Blue -->
+    <div class="frame-wrap">
+      <div class="frame-label">시안 B — White + Toss Blue <span class="badge">flow-pick-view와 동일</span></div>
+      <div class="phone">
+        <div class="status-bar"><span>9:24</span><span class="right">📶 75%</span></div>
+        <div class="phone-content">
+          <div class="head"><h1>☕ 오늘의 5분 브리핑</h1><div class="date">4월 26일 금요일</div></div>
+          <div class="brief-card first" style="background: #fff;">
+            <div class="row1">
+              <span class="num" style="background: #3182f6;">1</span>
+              <span class="sec" style="color: #3182f6;">경제</span>
+              <span class="time">12분 전</span>
+            </div>
+            <div class="conclusion">삼성이 칩 잘 팔려서 4분기 실적이 크게 나아졌어요</div>
+            <div class="original">삼성전자, 4분기 영업이익 10조원 돌파</div>
+          </div>
+          <div class="brief-card" style="background: #fff;">
+            <div class="row1">
+              <span class="num" style="background: #3182f6;">2</span>
+              <span class="sec" style="color: #3182f6;">세계</span>
+              <span class="time">1시간 전</span>
+            </div>
+            <div class="conclusion">미국이 금리 안 올렸고 곧 내릴 수도 있어요</div>
+            <div class="original">Fed, 기준금리 5.25% 동결... 3분기 인하 시사</div>
+          </div>
+          <div class="brief-card" style="background: #fff;">
+            <div class="row1">
+              <span class="num" style="background: #3182f6;">3</span>
+              <span class="sec" style="color: #3182f6;">해외증시</span>
+              <span class="time">3시간 전</span>
+            </div>
+            <div class="conclusion">엔비디아 AI 칩 수요 둔화 우려에 주가 8% 빠졌어요</div>
+            <div class="original">엔비디아 시간외 8% 급락... AI 칩 수요 둔화 우려</div>
+          </div>
+        </div>
+      </div>
+      <div class="frame-note">
+        토스 컨셉 그대로. 깔끔하지만 그만큼 평범. 차별성 약함.
+      </div>
+    </div>
+
+    <!-- C: Dark Mode -->
+    <div class="frame-wrap">
+      <div class="frame-label">시안 C — 다크모드 (시스템 자동)</div>
+      <div class="phone dark">
+        <div class="status-bar" style="color: #e8e8e8;"><span>9:24</span><span class="right">📶 75%</span></div>
+        <div class="phone-content">
+          <div class="head"><h1 style="color: #fff;">☕ 오늘의 5분 브리핑</h1><div class="date" style="color: #999;">4월 26일 금요일</div></div>
+
+          <div class="brief-card first" style="background: #1a1a1a; border-color: #2a2a2a;">
+            <div class="row1">
+              <span class="num" style="background: #4a9eff;">1</span>
+              <span class="sec" style="color: #4a9eff;">경제</span>
+              <span class="time" style="color: #666;">12분 전</span>
+            </div>
+            <div class="conclusion" style="color: #f0f0f0;">삼성이 칩 잘 팔려서 4분기 실적이 크게 나아졌어요</div>
+            <div class="original" style="color: #999;">삼성전자, 4분기 영업이익 10조원 돌파</div>
+          </div>
+          <div class="brief-card" style="background: #1a1a1a; border-color: #2a2a2a;">
+            <div class="row1">
+              <span class="num" style="background: #4a9eff;">2</span>
+              <span class="sec" style="color: #4a9eff;">세계</span>
+              <span class="time" style="color: #666;">1시간 전</span>
+            </div>
+            <div class="conclusion" style="color: #f0f0f0;">미국이 금리 안 올렸고 곧 내릴 수도 있어요</div>
+            <div class="original" style="color: #999;">Fed, 기준금리 5.25% 동결... 3분기 인하 시사</div>
+          </div>
+          <div class="brief-card" style="background: #1a1a1a; border-color: #2a2a2a;">
+            <div class="row1">
+              <span class="num" style="background: #4a9eff;">3</span>
+              <span class="sec" style="color: #4a9eff;">해외증시</span>
+              <span class="time" style="color: #666;">3시간 전</span>
+            </div>
+            <div class="conclusion" style="color: #f0f0f0;">엔비디아 AI 칩 수요 둔화 우려에 주가 8% 빠졌어요</div>
+            <div class="original" style="color: #999;">엔비디아 시간외 8% 급락... AI 칩 수요 둔화 우려</div>
+          </div>
+        </div>
+      </div>
+      <div class="frame-note">
+        prefers-color-scheme로 자동 적용. V1에 토글 UI는 없고 시스템 따라감. 출퇴근 야간 통근에 도움.
+      </div>
+    </div>
+
+  </div>
+</section>
+
+
+<!-- ─────────────────────────────────────── -->
+<!-- 섹션 5: 시간 그룹핑 -->
+<!-- ─────────────────────────────────────── -->
+<section class="compare">
+  <h2>5. 시간 표시 — 평면 vs 그룹핑</h2>
+  <p class="desc">
+    <strong>A: 시간 그룹 헤더</strong> ("오늘 아침", "어젯밤") — 출퇴근 시점에서 직관적.
+    <strong>B: 평면</strong> (각 카드에 "12분 전") — 단순.
+  </p>
+
+  <div class="frames">
+
+    <!-- A: 시간 그룹핑 -->
+    <div class="frame-wrap">
+      <div class="frame-label">시안 A — 시간대 그룹 <span class="star">⭐</span><span class="badge">추천</span></div>
+      <div class="phone ivory">
+        <div class="status-bar"><span>9:24</span><span class="right">📶 75%</span></div>
+        <div class="phone-content">
+          <div class="head"><h1>경제</h1></div>
+          <div class="time-group">오늘 아침</div>
+          <div class="card-ai-first">
+            <div class="thumb">📊</div>
+            <div class="body">
+              <div class="conclusion">삼성이 칩 잘 팔려서 4분기 실적이 크게 나아졌어요</div>
+              <div class="meta"><span>한국경제</span><span class="dot">·</span><span>08:42</span></div>
+            </div>
+          </div>
+          <div class="card-ai-first">
+            <div class="thumb">🏛️</div>
+            <div class="body">
+              <div class="conclusion">미국이 금리 안 올렸고 곧 내릴 수도 있어요</div>
+              <div class="meta"><span>연합뉴스</span><span class="dot">·</span><span>07:30</span></div>
+            </div>
+          </div>
+          <div class="time-group">어젯밤</div>
+          <div class="card-ai-first">
+            <div class="thumb">📉</div>
+            <div class="body">
+              <div class="conclusion">엔비디아 AI 칩 수요 둔화 우려에 주가 8% 빠졌어요</div>
+              <div class="meta"><span>한국경제</span><span class="dot">·</span><span>22:14</span></div>
+            </div>
+          </div>
+          <div class="card-ai-first">
+            <div class="thumb">🤖</div>
+            <div class="body">
+              <div class="conclusion">OpenAI가 더 똑똑한 AI 새로 내놨어요. 추론에 강해요</div>
+              <div class="meta"><span>전자신문</span><span class="dot">·</span><span>22:30</span></div>
+            </div>
+          </div>
+          <div class="time-group">어제 낮</div>
+          <div class="card-ai-first">
+            <div class="thumb">🏛️</div>
+            <div class="body">
+              <div class="conclusion">AI 만드는 회사들에 안전 검사 의무가 생겼어요</div>
+              <div class="meta"><span>동아일보</span><span class="dot">·</span><span>14:25</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="frame-note">
+        시간 그룹 = "퇴근 후 / 자기 전 / 출근길" 같은 인지 맞춤.
+      </div>
+    </div>
+
+    <!-- B: 평면 -->
+    <div class="frame-wrap">
+      <div class="frame-label">시안 B — 평면 (각 카드에 시간) <span class="badge">flow-pick-view와 동일</span></div>
+      <div class="phone">
+        <div class="status-bar"><span>9:24</span><span class="right">📶 75%</span></div>
+        <div class="phone-content">
+          <div class="head"><h1>경제</h1></div>
+          <div class="card-ai-first">
+            <div class="thumb">📊</div>
+            <div class="body">
+              <div class="conclusion">삼성이 칩 잘 팔려서 4분기 실적이 크게 나아졌어요</div>
+              <div class="meta"><span>한국경제</span><span class="dot">·</span><span>12분 전</span></div>
+            </div>
+          </div>
+          <div class="card-ai-first">
+            <div class="thumb">🏛️</div>
+            <div class="body">
+              <div class="conclusion">미국이 금리 안 올렸고 곧 내릴 수도 있어요</div>
+              <div class="meta"><span>연합뉴스</span><span class="dot">·</span><span>1시간 전</span></div>
+            </div>
+          </div>
+          <div class="card-ai-first">
+            <div class="thumb">📉</div>
+            <div class="body">
+              <div class="conclusion">엔비디아 AI 칩 수요 둔화 우려에 주가 8% 빠졌어요</div>
+              <div class="meta"><span>한국경제</span><span class="dot">·</span><span>11시간 전</span></div>
+            </div>
+          </div>
+          <div class="card-ai-first">
+            <div class="thumb">🤖</div>
+            <div class="body">
+              <div class="conclusion">OpenAI가 더 똑똑한 AI 새로 내놨어요. 추론에 강해요</div>
+              <div class="meta"><span>전자신문</span><span class="dot">·</span><span>10시간 전</span></div>
+            </div>
+          </div>
+          <div class="card-ai-first">
+            <div class="thumb">🏛️</div>
+            <div class="body">
+              <div class="conclusion">AI 만드는 회사들에 안전 검사 의무가 생겼어요</div>
+              <div class="meta"><span>동아일보</span><span class="dot">·</span><span>19시간 전</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="frame-note">
+        가장 단순. "11시간 전"보다 "어젯밤 22:14"가 더 직관적이라는 게 A의 주장.
+      </div>
+    </div>
+
+  </div>
+</section>
+
+
+<footer class="tail">
+  <p>4가지 결정만 합의되면 PRD 10장을 다시 쓰고 Part 2 들어갈 수 있어.</p>
+  <p style="margin-top: 8px;">데스크탑 폭이 좁으면 각 시안을 좌우로 스와이프해줘.</p>
+</footer>
+
+</body>
+</html>
