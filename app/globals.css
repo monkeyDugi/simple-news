@@ -1,13 +1,81 @@
-/* Pretendard 한국어 가변폰트 — CDN 로드. next/font/local 보다 단순. */
+/* Pretendard 한국어 가변폰트 — CDN 로드 */
 @import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/variable/pretendardvariable.css");
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * 토스 톤 컬러를 shadcn HSL 변수로 매핑.
+ * V1 다크모드 미지원 (.dark 도 라이트와 동일하게 두지만, 향후 V2 에서 분리 예정).
+ *
+ * 매핑 표:
+ *  --primary             #3182f6  toss-blue
+ *  --foreground          #191f28  toss-text
+ *  --muted-foreground    #6b7684  toss-text-weak
+ *  --secondary, --muted  #f2f4f6  toss-bg-mid
+ *  --border, --input     #e5e8eb  toss-border
+ */
 @layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 218 22% 13%;
+    --card: 0 0% 100%;
+    --card-foreground: 218 22% 13%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 218 22% 13%;
+    --primary: 217 92% 58%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 16% 96%;
+    --secondary-foreground: 218 22% 13%;
+    --muted: 210 16% 96%;
+    --muted-foreground: 215 11% 47%;
+    --accent: 210 16% 96%;
+    --accent-foreground: 218 22% 13%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 210 14% 91%;
+    --input: 210 14% 91%;
+    --ring: 217 92% 58%;
+    --radius: 0.625rem;
+  }
+
+  .dark {
+    --background: 0 0% 100%;
+    --foreground: 218 22% 13%;
+    --card: 0 0% 100%;
+    --card-foreground: 218 22% 13%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 218 22% 13%;
+    --primary: 217 92% 58%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 16% 96%;
+    --secondary-foreground: 218 22% 13%;
+    --muted: 210 16% 96%;
+    --muted-foreground: 215 11% 47%;
+    --accent: 210 16% 96%;
+    --accent-foreground: 218 22% 13%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 210 14% 91%;
+    --input: 210 14% 91%;
+    --ring: 217 92% 58%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
   html,
   body {
-    @apply bg-white text-gray-900 antialiased;
+    @apply bg-background text-foreground antialiased font-sans;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  /* 모바일 웹뷰에서 길게 누름 메뉴/하이라이트 비활성 */
+  body {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
   }
 }
