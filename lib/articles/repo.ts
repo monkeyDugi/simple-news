@@ -265,3 +265,74 @@ export async function insertArticleTemplate(payload: {
 
   return { inserted: true, templateId: tplRow.id as number };
 }
+
+// ───── 미요약 template 조회 (cron summarize) ──────────────
+// processed_at IS NULL 인 article_template 을 본문과 조인해 가져온다.
+// 섹션별 그룹핑은 호출자(batch.ts)에서 처리.
+export interface TemplateRow {
+  id: number;
+  section: SectionCode;
+  title: string;
+  content: string;
+}
+
+export async function fetchUnprocessedTemplates(
+  limit = 200,
+): Promise<TemplateRow[]> {
+  if (shouldMock()) {
+    // 모킹 모드: insertArticleTemplate 가 templateId 를 반환하지 않으므로 cron 흐름 자체가 의미 없음.
+    return [];
+  }
+  const supabase = getSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("article_template")
+    .select("id, section, title, article_content_template!inner(content)")
+    .is("processed_at", null)
+    .order("section", { ascending: true })
+    .order("scraped_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+
+  return (data ?? []).map((row) => {
+    const c = row.article_content_template as
+      | { content: string }
+      | { content: string }[]
+      | null
+      | undefined;
+    const content = Array.isArray(c) ? c[0]?.content ?? "" : c?.content ?? "";
+    return {
+      id: row.id as number,
+      section: row.section as SectionCode,
+      title: String(row.title ?? ""),
+      content,
+    };
+  });
+}
+
+// ───── 요약 결과 저장 (cron summarize) ───────────────────
+// upsert_article_with_summary RPC 호출. 트랜잭션 내에서 article 승격 + summary + key_terms + processed_at 갱신.
+export interface SummaryPayload {
+  templateId: number;
+  titleTheme: string;
+  summary: string;
+  easyExplanation: string;
+  finalConclusion: string;
+  keyTerms: { term: string; explanation: string }[];
+}
+
+export async function applySummary(payload: SummaryPayload): Promise<number | null> {
+  if (shouldMock()) return null;
+  const supabase = getSupabaseAdminClient();
+  const { data, error } = await supabase.rpc("upsert_article_with_summary", {
+    p_template_id: payload.templateId,
+    p_summary: {
+      titleTheme: payload.titleTheme,
+      summary: payload.summary,
+      easyExplanation: payload.easyExplanation,
+      finalConclusion: payload.finalConclusion,
+      keyTerms: payload.keyTerms,
+    },
+  });
+  if (error) throw error;
+  return (data as number | null) ?? null;
+}

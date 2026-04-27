@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { getArticleDetailById } from "@/lib/articles/service";
 import { toErrorBody } from "@/lib/errors";
 
-export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(
