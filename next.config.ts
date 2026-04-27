@@ -8,7 +8,9 @@ const isStaticBuild = process.env.BUILD_TARGET === "static";
 const nextConfig: NextConfig = {
   output: isStaticBuild ? "export" : undefined,
   images: { unoptimized: true },
-  trailingSlash: true,
+  // trailingSlash 는 API 라우트에서 308 redirect 를 유발하므로 false.
+  // Capacitor 빌드는 SPA 라우팅(client-side)을 쓰므로 굳이 필요 없다.
+  trailingSlash: false,
   reactStrictMode: true,
 };
 
