@@ -7,15 +7,38 @@ import {
   naverGeneralListHtml,
 } from "@/lib/mocks/naver-html";
 
+// 최신 Chrome (macOS) UA. Vercel 같은 클라우드 IP 에서는 네이버가 봇 감지에 더 엄격해서
+// 사람 브라우저처럼 보이게 sec-ch-ua / Referer 까지 박는다.
 const UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36";
 
-const HEADERS: HeadersInit = {
+const BASE_HEADERS: HeadersInit = {
   "User-Agent": UA,
-  "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+  "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
   Accept:
-    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+  "Accept-Encoding": "gzip, deflate, br",
+  "Cache-Control": "no-cache",
+  Pragma: "no-cache",
+  "sec-ch-ua": '"Not A(Brand";v="8", "Chromium";v="132", "Google Chrome";v="132"',
+  "sec-ch-ua-mobile": "?0",
+  "sec-ch-ua-platform": '"macOS"',
+  "Sec-Fetch-Dest": "document",
+  "Sec-Fetch-Mode": "navigate",
+  "Sec-Fetch-Site": "same-origin",
+  "Sec-Fetch-User": "?1",
+  "Upgrade-Insecure-Requests": "1",
 };
+
+// URL 기반으로 적절한 Referer 결정.
+//   본문(n.news.naver.com 또는 mnews) → 목록 https://news.naver.com/
+//   목록(news.naver.com/section/...) → 홈 https://news.naver.com/
+//   finance(finance.naver.com) → finance 홈
+function pickReferer(url: string): string {
+  if (url.includes("finance.naver.com")) return "https://finance.naver.com/";
+  if (url.includes("n.news.naver.com")) return "https://news.naver.com/";
+  return "https://www.naver.com/";
+}
 
 // 네이버 봇 보호 대응: 본문 fetch 간 sleep.
 // icn1 region 으로 옮기며 supabase latency 가 사라져 호출 간격이 1s 로 좁아지자
@@ -34,7 +57,11 @@ export async function fetchHtml(url: string): Promise<string> {
   if (shouldMockScraper()) {
     return mockFetchHtml(url);
   }
-  const res = await fetch(url, { headers: HEADERS });
+  const headers: HeadersInit = {
+    ...BASE_HEADERS,
+    Referer: pickReferer(url),
+  };
+  const res = await fetch(url, { headers });
   if (!res.ok) throw new Error(`fetch ${url} failed: HTTP ${res.status}`);
 
   // finance.naver.com 은 charset=MS949 로 내려오므로 Content-Type 을 보고 디코딩.
