@@ -1,0 +1,79 @@
+name: cron
+
+# 스크래핑 + 요약 cron.
+# Vercel cron 은 AWS IP 라 네이버 봇 보호로 본문 fetch 가 429.
+# GitHub Actions runner (Microsoft Azure DC IP) 로 옮겨 회피 + 6시간 timeout 여유.
+#
+# 시간대 (UTC → KST):
+#   - scrape:      UTC 18:00 = KST 03:00  (모든 섹션, 한 번)
+#   - summarize-a: UTC 20:00 = KST 05:00  (POLITICS / ECONOMY / SOCIETY / GLOBAL_MARKET)
+#   - summarize-b: UTC 21:00 = KST 06:00  (LIFE / WORLD / IT)
+# GitHub Actions cron 정확도는 ±5~15분 (Vercel Hobby ±59분보다 좋음).
+
+on:
+  schedule:
+    - cron: "0 18 * * *"   # scrape
+    - cron: "0 20 * * *"   # summarize group A
+    - cron: "0 21 * * *"   # summarize group B
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "수동 실행 대상 (scrape | summarize-a | summarize-b)"
+        required: true
+        default: "scrape"
+        type: choice
+        options:
+          - scrape
+          - summarize-a
+          - summarize-b
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Resolve target
+        id: target
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "target=${{ inputs.target }}" >> "$GITHUB_OUTPUT"
+          else
+            case "${{ github.event.schedule }}" in
+              "0 18 * * *") echo "target=scrape"      >> "$GITHUB_OUTPUT" ;;
+              "0 20 * * *") echo "target=summarize-a" >> "$GITHUB_OUTPUT" ;;
+              "0 21 * * *") echo "target=summarize-b" >> "$GITHUB_OUTPUT" ;;
+              *) echo "unknown schedule: ${{ github.event.schedule }}" >&2; exit 1 ;;
+            esac
+          fi
+
+      - name: Run scrape
+        if: steps.target.outputs.target == 'scrape'
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: npx tsx scripts/run-scrape.ts
+
+      - name: Run summarize group A
+        if: steps.target.outputs.target == 'summarize-a'
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: npx tsx scripts/run-summarize.ts a
+
+      - name: Run summarize group B
+        if: steps.target.outputs.target == 'summarize-b'
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: npx tsx scripts/run-summarize.ts b
