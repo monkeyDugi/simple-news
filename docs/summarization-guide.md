@@ -172,20 +172,20 @@ async function processSection(items: TemplateRow[], size: number) {
 - **섹션별 그룹화 이유**: 중복 제거 정확도 ↑ (다른 섹션이 섞이면 모델이 주제 헷갈림)
 - **응답 누락 templateId**: 모델이 70%+ 유사로 제거한 것 → 다음 cron 에서 재시도하지 않음 (정상 동작)
 
-### 시간대별 섹션 분담 (Hobby plan 하루 1회 제약 대응)
+### Cron 흐름 (flowpick 패턴 그대로)
 
-Vercel Hobby 는 cron 1개당 **하루 1회만 트리거** 가능 (cron 갯수는 100개까지 자유). 그래서 summarize cron 을 2개로 등록하고 route 가 호출 시점 UTC hour 로 어떤 그룹을 처리할지 분기 (`app/api/cron/summarize/route.ts`):
+GitHub Actions (`.github/workflows/cron.yml`) 가 6시간 주기 (`0 */6 * * *` UTC = KST 09/15/21/03시) 로 `scripts/run-cron.ts` 를 실행. 한 process 안에서 순차:
 
-| 그룹 | cron schedule | 트리거 (KST / UTC) | 섹션 |
-|---|---|---|---|
-| **A** | `0 20 * * *` | 05:00 KST / 20:00 UTC | POLITICS, ECONOMY, SOCIETY, GLOBAL_MARKET (4) |
-| **B** | `0 21 * * *` | 06:00 KST / 21:00 UTC | LIFE, WORLD, IT (3) |
+```
+1) runScrapeAll()              ← collect → filter → save
+2) fetchUnprocessedTemplates() ← article_template 전체 조회 (섹션 분담 없음)
+3) summarizeAllPending()       ← 섹션별 그룹 → batch 처리
+4) deleteAllArticleTemplates() ← 사이클 종료 시 통째로 삭제 (실패한 것까지)
+```
 
-분기 함수 `pickSectionsByUtcHour(hour)`: `hour === 21 → B`, 그 외(20시 트리거 + 수동 호출 폴백) `→ A`.
+핵심: **template 은 한 사이클 임시 버퍼**. 이번 사이클에 처리 못 한 건 그냥 버리고, 다음 cron 이 네이버 목록에서 신규로 다시 가져옴 (flowpick `cleaner.DeleteAll()` 패턴).
 
-scrape cron (`/api/cron/scrape`)은 별도 1개로 KST 03:00 (UTC 18:00, `0 18 * * *`) 에 1회. summarize 와 최소 1시간 30분 갭 (Hobby 정확도 ±59분 안전 마진).
-
-수동 트리거(curl) 시에도 호출 시점 UTC 시간 기준으로 자동 결정. 두 그룹 모두 처리하려면 시간대를 바꿔 두 번 호출.
+`applySummary` 는 article 만 만들고 template 은 안 건드림 → 정리는 사이클 끝에서 한 번.
 
 ---
 
@@ -297,3 +297,4 @@ V1 운영 후 매주 샘플 100건 검토:
 - **v3.1** (2026-05-01): Cron 주기 6시간(하루 4회) → 하루 2회(KST 06:00 / 18:00 = UTC 21:00 / 09:00). 섹션 7개를 `Promise.all` 로 병렬 처리하도록 변경. 16분 직렬 → ~3분 병렬 + TPD 사용량 50% → 25%.
 - **v3.2** (2026-05-01): v3.1 의 섹션 병렬 실측에서 batch 9 중 6~7 실패(TPM 순간 초과 추정) 확인 → 직렬로 회귀. 대신 한 cron 호출이 일부 섹션만 처리하도록 시간대 분담 도입(morning 4섹션 / evening 3섹션). `fetchUnprocessedTemplates` 에 `sections` 필터 인자 추가.
 - **v3.3** (2026-05-01): Vercel Hobby 의 "cron 1개당 하루 1회" 제약 발견 (v3.1·3.2 의 `0 21,9 * * *` 표현은 deploy 실패). cron 을 3개로 분리: scrape (KST 03:00), summarize A (KST 05:00, 4섹션), summarize B (KST 06:00, 3섹션). 그룹 이름 morning/evening → A/B 로 변경.
+- **v3.4** (2026-05-01): cron 자체를 GitHub Actions 로 이전 (Vercel/AWS IP 봇 차단 회피). flowpick CollectNews/SummarizeNews 패턴 그대로 정렬: scrape collect→filter→save 3단계, summarize 끝에 `DeleteAll`. 시간대 분담 / 섹션 그룹 인자 / per-template DELETE 모두 제거. cron 6시간 주기로 복구 (`0 */6 * * *` UTC).

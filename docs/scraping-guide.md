@@ -2,25 +2,32 @@
 
 > 네이버 뉴스에서 7개 섹션을 스크래핑하기 위한 셀렉터 매핑과 운영 가이드.
 
+## 흐름 (flowpick CollectNews 패턴)
+
+한 cron 호출은 다음 3단계를 순차 처리한다 (`lib/cron/scrape-runner.ts`):
+
+```
+1) Collect:    7섹션 페이지 fetch → NewsListItem 메타만 (본문 X)
+   - scraper.getNewsList(section) 호출
+2) Filter:     fetchExistingArticleSourceIds(...) 로 article 테이블 비교
+   - 이미 있는 source_article_id 제외 → 신규만 남김
+3) Scrape&Save: 신규에 한해서만 scrapeArticle(item) (본문 fetch) → insertArticleTemplate
+   - 호출 사이 REQUEST_DELAY_MS sleep (네이버 봇 보호 회피)
+```
+
+핵심: **본문 fetch 가 신규 건수만큼만**. 항상 7×30 호출하던 구버전 대비 cron 부담/네이버 부하/429 위험 모두 감소.
+
 ## 공통 정책
 
-### User-Agent
+### User-Agent + 헤더
 
-```
-Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36
-```
-
-추가 헤더:
-```
-Accept-Language: ko-KR,ko;q=0.9,en;q=0.8
-Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
-```
+`lib/scrapers/shared.ts` 의 `BASE_HEADERS` 참조. 최신 Chrome 132 (macOS) UA + Referer/sec-ch-ua/Sec-Fetch-* 가 박혀있다 (Vercel/AWS IP 봇 감지 회피용 보강 — flowpick 보다 보수적).
 
 ### 요청 정책
 
-- 요청 간 최소 **500ms** 슬립
-- 섹션 간 병렬 OK, 섹션 내부 순차
-- 실패 시 1회 재시도, 그래도 실패하면 해당 섹션만 스킵
+- 본문 fetch 사이 **`REQUEST_DELAY_MS = 1500ms`** sleep
+- 섹션 간 / 본문 간 모두 순차 (병렬 X)
+- 한 기사 실패는 다음으로 넘어감 (전체 cron 안 막음)
 
 ### HTML 정제 (공통)
 

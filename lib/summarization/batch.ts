@@ -83,7 +83,8 @@ async function processSection(
         }
       }
     } catch (e) {
-      // batch 전체가 실패하면 모두 failed 로 집계. processed_at 갱신 X → 다음 cron 에서 재시도.
+      // batch 전체 실패 → failed 로 집계. flowpick 패턴 상 사이클 종료 시 template 통째로 삭제되므로
+      // 실패한 건은 이번 사이클에서 영원히 버려지고, 다음 cron 이 네이버에서 새로 가져옴.
       report.failed += chunk.length;
       // eslint-disable-next-line no-console
       console.error("[summarize] batch failed", e);

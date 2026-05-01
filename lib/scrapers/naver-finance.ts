@@ -3,84 +3,57 @@ import { load } from "cheerio";
 import type { ScrapedArticle } from "@/types/article";
 import { getSection, type SectionCode } from "@/lib/sections";
 
-import {
-  REQUEST_DELAY_MS,
-  cleanContent,
-  fetchHtml,
-  parseKstToUtc,
-  sleep,
-} from "./shared";
-import type { Scraper } from "./types";
+import { cleanContent, fetchHtml, parseKstToUtc } from "./shared";
+import type { NewsListItem, Scraper } from "./types";
 
 // 해외증시: 경제(101) → 증권(258) → 해외증시(403) 의 3차 분류.
 // 일반 섹션과 URL/DOM 구조가 달라서 별도 어댑터.
-//
-// 페이지 특이사항 (2026-05-01 확인):
-//  1) 응답 인코딩이 MS949 (HTML meta 는 utf-8 이라 거짓말, HTTP 헤더가 진실).
-//     shared.fetchHtml 이 charset 헤더 보고 자동 디코딩.
-//  2) 목록은 li.newsList > dl > dd.articleSubject 구조 (예전 ul.newsList li 와 다름).
-//  3) finance 의 news_read.naver URL 은 92바이트 JS 리다이렉트만 내려보낸다:
-//       <SCRIPT>top.location.href='https://n.news.naver.com/mnews/article/{office}/{article}';</SCRIPT>
-//     그래서 본문은 일반 n.news 도메인에서 #dic_area 로 가져온다.
 const FINANCE_LIST_URL =
   "https://finance.naver.com/news/news_list.naver?mode=LSS3D&section_id=101&section_id2=258&section_id3=403";
-
-const MAX_PER_SECTION = 20;
 
 export const naverFinanceScraper: Scraper = {
   source: "NAVER",
 
-  async scrape(section: SectionCode): Promise<ScrapedArticle[]> {
+  async getNewsList(section: SectionCode): Promise<NewsListItem[]> {
     if (section !== "GLOBAL_MARKET") {
       throw new Error(
         `naver-finance scraper only supports GLOBAL_MARKET (got ${section})`,
       );
     }
     const def = getSection(section);
+    const html = await fetchHtml(FINANCE_LIST_URL);
+    return parseList(html, section, def.naverSectionId);
+  },
 
-    const listHtml = await fetchHtml(FINANCE_LIST_URL);
-    const items = parseList(listHtml);
-
-    const out: ScrapedArticle[] = [];
-    for (const item of items.slice(0, MAX_PER_SECTION)) {
-      try {
-        const detail = await fetchDetail(item.normalizedLink);
-        if (detail) {
-          out.push({
-            source: "NAVER",
-            sourcePublisherId: item.ids.publisherId,
-            sourceArticleId: item.ids.articleId,
-            sourceSectionId: def.naverSectionId,
-            section,
-            title: item.title,
-            link: item.normalizedLink,
-            thumbnailLink: item.thumbnail,
-            publisher: detail.publisher ?? item.publisher,
-            author: detail.author,
-            publishedAt: detail.publishedAt ?? item.publishedAt,
-            content: detail.content,
-          });
-        }
-      } catch (e) {
-        // eslint-disable-next-line no-console
-        console.error(`[naver-finance] detail fail ${item.normalizedLink}`, e);
-      }
-      await sleep(REQUEST_DELAY_MS);
-    }
-    return out;
+  async scrapeArticle(item: NewsListItem): Promise<ScrapedArticle | null> {
+    const detail = await fetchDetail(item.link);
+    if (!detail) return null;
+    if (!detail.publisher && !item.publisher) return null;
+    return {
+      source: item.source,
+      sourcePublisherId: item.sourcePublisherId,
+      sourceArticleId: item.sourceArticleId,
+      sourceSectionId: item.sourceSectionId,
+      section: item.section,
+      title: item.title,
+      link: item.link,
+      thumbnailLink: item.thumbnailLink,
+      publisher: detail.publisher ?? item.publisher,
+      author: detail.author,
+      publishedAt: detail.publishedAt ?? new Date(),
+      content: detail.content,
+    };
   },
 };
 
-interface ListItem {
+interface RawFinanceItem {
   title: string;
-  normalizedLink: string; // n.news.naver.com 으로 변환된 최종 본문 URL
+  normalizedLink: string;
   thumbnail: string | null;
   publisher: string | null;
-  publishedAt: Date;
   ids: { publisherId: string; articleId: string };
 }
 
-// finance 의 article_id, office_id 는 query parameter 로.
 function parseFinanceUrl(
   url: string,
 ): { publisherId: string; articleId: string } | null {
@@ -93,9 +66,13 @@ function parseFinanceUrl(
   };
 }
 
-function parseList(html: string): ListItem[] {
+function parseList(
+  html: string,
+  section: SectionCode,
+  naverSectionId: string,
+): NewsListItem[] {
   const $ = load(html);
-  const items: ListItem[] = [];
+  const raw: RawFinanceItem[] = [];
 
   $("dd.articleSubject").each((_, el) => {
     const $el = $(el);
@@ -114,35 +91,34 @@ function parseList(html: string): ListItem[] {
     const title = (a.attr("title") || a.text()).trim();
     if (!title) return;
 
-    // dl 내부의 형제로 dd.articleSummary 가 있고 그 안에 .press / .wdate 가 있다.
     const $dl = $el.closest("dl");
     const summary = $dl.find("dd.articleSummary").first();
     const publisher = summary.find(".press").first().text().trim() || null;
-    const dateText = summary.find(".wdate").first().text().trim();
-    const publishedAt = parseKstToUtc(dateText) ?? new Date();
 
-    // 썸네일은 형제 dt.thumb > a > img.
     const thumb = $dl.find("dt.thumb img").first();
-    const thumbnail =
-      thumb.attr("data-src") || thumb.attr("src") || null;
+    const thumbnail = thumb.attr("data-src") || thumb.attr("src") || null;
 
-    items.push({
-      title,
-      normalizedLink,
-      thumbnail,
-      publisher,
-      publishedAt,
-      ids,
-    });
+    raw.push({ title, normalizedLink, thumbnail, publisher, ids });
   });
 
-  // 같은 기사가 상단/일반 영역에 중복 노출되는 경우 제거.
   const seen = new Set<string>();
-  return items.filter((it) => {
-    if (seen.has(it.normalizedLink)) return false;
+  const out: NewsListItem[] = [];
+  for (const it of raw) {
+    if (seen.has(it.normalizedLink)) continue;
     seen.add(it.normalizedLink);
-    return true;
-  });
+    out.push({
+      source: "NAVER",
+      sourcePublisherId: it.ids.publisherId,
+      sourceArticleId: it.ids.articleId,
+      sourceSectionId: naverSectionId,
+      section,
+      title: it.title,
+      link: it.normalizedLink,
+      thumbnailLink: it.thumbnail,
+      publisher: it.publisher,
+    });
+  }
+  return out;
 }
 
 interface DetailParsed {

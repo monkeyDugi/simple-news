@@ -4,68 +4,53 @@ import { getSection, type SectionCode } from "@/lib/sections";
 import type { ScrapedArticle } from "@/types/article";
 
 import {
-  REQUEST_DELAY_MS,
   cleanContent,
   fetchHtml,
   parseKstToUtc,
   parseNaverArticleUrl,
-  sleep,
 } from "./shared";
-import type { Scraper } from "./types";
+import type { NewsListItem, Scraper } from "./types";
 
 const NAVER_LIST_URL = (sectionId: string) =>
   `https://news.naver.com/section/${sectionId}`;
 
-// 한 섹션당 최대 처리 건수. 운영 부하 방지 + AI 요약 비용 통제.
-// REQUEST_DELAY_MS 1500ms 와 5분 maxDuration 안에 7섹션 다 들어가게 20 으로 컷.
-const MAX_PER_SECTION = 20;
-
 export const naverGeneralScraper: Scraper = {
   source: "NAVER",
 
-  async scrape(section: SectionCode): Promise<ScrapedArticle[]> {
+  async getNewsList(section: SectionCode): Promise<NewsListItem[]> {
     const def = getSection(section);
     if (def.scraperKind !== "general") {
       throw new Error(
         `naver-general scraper does not handle section=${section}`,
       );
     }
+    const html = await fetchHtml(NAVER_LIST_URL(def.naverSectionId));
+    return parseList(html, section, def.naverSectionId);
+  },
 
-    const listHtml = await fetchHtml(NAVER_LIST_URL(def.naverSectionId));
-    const items = parseList(listHtml);
-
-    const out: ScrapedArticle[] = [];
-    for (const item of items.slice(0, MAX_PER_SECTION)) {
-      try {
-        const detail = await fetchDetail(item.link);
-        if (detail) {
-          out.push({
-            source: "NAVER",
-            sourcePublisherId: item.ids.publisherId,
-            sourceArticleId: item.ids.articleId,
-            sourceSectionId: def.naverSectionId,
-            section,
-            title: item.title,
-            link: item.link,
-            thumbnailLink: item.thumbnail,
-            publisher: detail.publisher ?? item.publisher,
-            author: detail.author,
-            publishedAt: detail.publishedAt,
-            content: detail.content,
-          });
-        }
-      } catch (e) {
-        // 한 기사 실패는 섹션 전체를 막지 않는다.
-        // eslint-disable-next-line no-console
-        console.error(`[naver-general] detail fail ${item.link}`, e);
-      }
-      await sleep(REQUEST_DELAY_MS);
-    }
-    return out;
+  async scrapeArticle(item: NewsListItem): Promise<ScrapedArticle | null> {
+    const detail = await fetchDetail(item.link);
+    if (!detail) return null;
+    // flowpick 룰: author/publisher 없으면 스킵
+    if (!detail.publisher && !item.publisher) return null;
+    return {
+      source: item.source,
+      sourcePublisherId: item.sourcePublisherId,
+      sourceArticleId: item.sourceArticleId,
+      sourceSectionId: item.sourceSectionId,
+      section: item.section,
+      title: item.title,
+      link: item.link,
+      thumbnailLink: item.thumbnailLink,
+      publisher: detail.publisher ?? item.publisher,
+      author: detail.author,
+      publishedAt: detail.publishedAt,
+      content: detail.content,
+    };
   },
 };
 
-interface ListItem {
+interface RawListItem {
   title: string;
   link: string;
   thumbnail: string | null;
@@ -73,9 +58,13 @@ interface ListItem {
   ids: { publisherId: string; articleId: string };
 }
 
-function parseList(html: string): ListItem[] {
+function parseList(
+  html: string,
+  section: SectionCode,
+  naverSectionId: string,
+): NewsListItem[] {
   const $ = load(html);
-  const items: ListItem[] = [];
+  const raw: RawListItem[] = [];
 
   $(".sa_item").each((_, el) => {
     const $el = $(el);
@@ -88,16 +77,27 @@ function parseList(html: string): ListItem[] {
     const img = $el.find(".sa_thumb_inner img").first();
     const thumbnail = img.attr("data-src") ?? img.attr("src") ?? null;
     const publisher = $el.find(".sa_text_press").text().trim() || null;
-    items.push({ title, link, thumbnail, publisher, ids });
+    raw.push({ title, link, thumbnail, publisher, ids });
   });
 
-  // 같은 기사가 여러 영역에 노출되는 경우 dedup.
   const seen = new Set<string>();
-  return items.filter((it) => {
-    if (seen.has(it.link)) return false;
+  const out: NewsListItem[] = [];
+  for (const it of raw) {
+    if (seen.has(it.link)) continue;
     seen.add(it.link);
-    return true;
-  });
+    out.push({
+      source: "NAVER",
+      sourcePublisherId: it.ids.publisherId,
+      sourceArticleId: it.ids.articleId,
+      sourceSectionId: naverSectionId,
+      section,
+      title: it.title,
+      link: it.link,
+      thumbnailLink: it.thumbnail,
+      publisher: it.publisher,
+    });
+  }
+  return out;
 }
 
 interface DetailParsed {

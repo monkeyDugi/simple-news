@@ -5,6 +5,7 @@
 // MOCK_SCRAPER=false 로 두면 실제 네이버에 요청한다.
 
 import { getScraperForSection } from "@/lib/scrapers";
+import { REQUEST_DELAY_MS, sleep } from "@/lib/scrapers/shared";
 import { isSectionCode, SECTION_CODES } from "@/lib/sections";
 
 async function main() {
@@ -16,14 +17,21 @@ async function main() {
     process.exit(1);
   }
   const scraper = getScraperForSection(arg);
-  const items = await scraper.scrape(arg);
-  console.log(`scraped ${items.length} items from ${arg}`);
-  for (const it of items.slice(0, 5)) {
-    console.log(`- [${it.publisher ?? "?"}] ${it.title}`);
-    console.log(`  link=${it.link}`);
-    console.log(
-      `  publishedAt=${it.publishedAt.toISOString()}, contentLen=${it.content.length}`,
-    );
+  const list = await scraper.getNewsList(arg);
+  console.log(`[test] ${arg} list=${list.length}`);
+  // 앞 3건만 본문 fetch 시도
+  for (const item of list.slice(0, 3)) {
+    const detail = await scraper.scrapeArticle(item);
+    if (!detail) {
+      console.log(`- SKIP ${item.title}`);
+    } else {
+      console.log(`- [${detail.publisher ?? "?"}] ${detail.title}`);
+      console.log(`  link=${detail.link}`);
+      console.log(
+        `  publishedAt=${detail.publishedAt.toISOString()}, contentLen=${detail.content.length}`,
+      );
+    }
+    await sleep(REQUEST_DELAY_MS);
   }
 }
 

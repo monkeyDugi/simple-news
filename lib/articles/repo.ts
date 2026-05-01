@@ -276,42 +276,51 @@ export interface TemplateRow {
   content: string;
 }
 
+// flowpick ReadAllGroupedBySection 패턴: 모든 미요약 template 단일 조회.
+// cron 사이클 종료 시 deleteAllArticleTemplates() 가 잔여분까지 청소하므로
+// processed_at 마킹은 더 이상 의미 없지만 컬럼/인덱스는 남겨둠 (다음 cleanup PR).
 export async function fetchUnprocessedTemplates(
-  limit = 200,
-  sections?: SectionCode[],
+  limit = 1000,
 ): Promise<TemplateRow[]> {
-  if (shouldMock()) {
-    // 모킹 모드: insertArticleTemplate 가 templateId 를 반환하지 않으므로 cron 흐름 자체가 의미 없음.
-    return [];
-  }
+  if (shouldMock()) return [];
   const supabase = getSupabaseAdminClient();
-  // 섹션이 안 주어지면 전체 1회 query (기존 동작 호환). 주어지면 섹션별 균등 분배 (한 섹션 쏠림 방지).
-  if (!sections || sections.length === 0) {
-    const { data, error } = await supabase
-      .from("article_template")
-      .select("id, section, title, article_content_template!inner(content)")
-      .is("processed_at", null)
-      .order("section", { ascending: true })
-      .order("scraped_at", { ascending: false })
-      .limit(limit);
-    if (error) throw error;
-    return (data ?? []).map(toTemplateRow);
-  }
+  const { data, error } = await supabase
+    .from("article_template")
+    .select("id, section, title, article_content_template!inner(content)")
+    .order("section", { ascending: true })
+    .order("scraped_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []).map(toTemplateRow);
+}
 
-  const perSection = Math.max(1, Math.ceil(limit / sections.length));
-  const all: TemplateRow[] = [];
-  for (const section of sections) {
-    const { data, error } = await supabase
-      .from("article_template")
-      .select("id, section, title, article_content_template!inner(content)")
-      .is("processed_at", null)
-      .eq("section", section)
-      .order("scraped_at", { ascending: false })
-      .limit(perSection);
-    if (error) throw error;
-    for (const row of data ?? []) all.push(toTemplateRow(row));
-  }
-  return all;
+// scrape 단계 dedup: article 테이블에 이미 있는 source_article_id 집합 반환.
+// flowpick FilterDuplicates 와 동일 역할.
+export async function fetchExistingArticleSourceIds(
+  ids: string[],
+): Promise<Set<string>> {
+  if (shouldMock() || ids.length === 0) return new Set();
+  const supabase = getSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("article")
+    .select("source_article_id")
+    .in("source_article_id", ids);
+  if (error) throw error;
+  return new Set((data ?? []).map((r) => String(r.source_article_id)));
+}
+
+// flowpick DeleteAll 패턴: 사이클 종료 시 article_template 통째로 삭제.
+// article_content_template 은 ON DELETE CASCADE 로 자동 정리.
+// 이번 사이클에서 요약 못 한 것까지 같이 버린다 (다음 사이클이 네이버에서 다시 가져옴).
+export async function deleteAllArticleTemplates(): Promise<void> {
+  if (shouldMock()) return;
+  const supabase = getSupabaseAdminClient();
+  // postgrest 는 unconditional delete 를 거부 → id >= 0 로 모든 row 매칭.
+  const { error } = await supabase
+    .from("article_template")
+    .delete()
+    .gte("id", 0);
+  if (error) throw error;
 }
 
 function toTemplateRow(row: Record<string, unknown>): TemplateRow {
@@ -330,11 +339,11 @@ function toTemplateRow(row: Record<string, unknown>): TemplateRow {
 }
 
 // ───── 요약 결과 저장 (cron summarize) ───────────────────
-// 응용 코드에서 직접 INSERT/DELETE 흐름:
+// 응용 코드에서 직접 INSERT 흐름:
 //   1) article_template + content 조회
 //   2) article INSERT → article_content INSERT → article_summary INSERT → article_key_term INSERT
-//   3) article_template DELETE (CASCADE 로 content_template 도 정리)
-// FK CASCADE 덕에 article 만 DELETE 하면 후속 row 들도 자동 정리되므로 부분 실패 시 article 만 롤백.
+// 부분 실패 시 article DELETE (FK CASCADE 로 후속 row 자동 정리) → 다음 사이클에서 재시도.
+// article_template 정리는 사이클 종료 시 deleteAllArticleTemplates() 가 한 번에 (flowpick DeleteAll 패턴).
 export interface SummaryPayload {
   templateId: number;
   titleTheme: string;
@@ -422,20 +431,6 @@ export async function applySummary(
     // 부분 실패 시 article 롤백 — FK CASCADE 로 content/summary/key_term 까지 정리됨.
     await supabase.from("article").delete().eq("id", articleId);
     throw e;
-  }
-
-  // 4) template 정리 (CASCADE 로 content_template 도 같이 삭제)
-  // template 삭제 실패는 critical 아님: 다음 cron 에서 article UNIQUE 위반으로 거부되므로 데이터 일관성은 안전.
-  const { error: dErr } = await supabase
-    .from("article_template")
-    .delete()
-    .eq("id", payload.templateId);
-  if (dErr) {
-    // eslint-disable-next-line no-console
-    console.error(
-      `[applySummary] template delete failed id=${payload.templateId}`,
-      dErr,
-    );
   }
 
   return articleId;
