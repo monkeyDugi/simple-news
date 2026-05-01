@@ -330,7 +330,11 @@ function toTemplateRow(row: Record<string, unknown>): TemplateRow {
 }
 
 // ───── 요약 결과 저장 (cron summarize) ───────────────────
-// upsert_article_with_summary RPC 호출. 트랜잭션 내에서 article 승격 + summary + key_terms + processed_at 갱신.
+// 응용 코드에서 직접 INSERT/DELETE 흐름:
+//   1) article_template + content 조회
+//   2) article INSERT → article_content INSERT → article_summary INSERT → article_key_term INSERT
+//   3) article_template DELETE (CASCADE 로 content_template 도 정리)
+// FK CASCADE 덕에 article 만 DELETE 하면 후속 row 들도 자동 정리되므로 부분 실패 시 article 만 롤백.
 export interface SummaryPayload {
   templateId: number;
   titleTheme: string;
@@ -346,17 +350,93 @@ export async function applySummary(
 ): Promise<number | null> {
   if (shouldMock()) return null;
   const supabase = getSupabaseAdminClient();
-  const { data, error } = await supabase.rpc("upsert_article_with_summary", {
-    p_template_id: payload.templateId,
-    p_summary: {
-      titleTheme: payload.titleTheme,
+
+  // 1) template + content 조회
+  const { data: tpl, error: tplErr } = await supabase
+    .from("article_template")
+    .select(
+      "source, source_publisher_id, source_article_id, source_section_id, section, title, link, thumbnail_link, publisher, author, published_at, article_content_template!inner(content)",
+    )
+    .eq("id", payload.templateId)
+    .maybeSingle();
+  if (tplErr) throw tplErr;
+  if (!tpl) return null;
+  const contentRaw = tpl.article_content_template as
+    | { content: string }
+    | { content: string }[];
+  const content = Array.isArray(contentRaw)
+    ? contentRaw[0]?.content ?? ""
+    : contentRaw?.content ?? "";
+
+  // 2) article 승격 (RETURNING id)
+  const { data: art, error: artErr } = await supabase
+    .from("article")
+    .insert({
+      source: tpl.source,
+      source_publisher_id: tpl.source_publisher_id,
+      source_article_id: tpl.source_article_id,
+      source_section_id: tpl.source_section_id,
+      section: tpl.section,
+      title: tpl.title,
+      link: tpl.link,
+      thumbnail_link: tpl.thumbnail_link,
+      publisher: tpl.publisher,
+      author: tpl.author,
+      published_at: tpl.published_at,
+    })
+    .select("id")
+    .maybeSingle();
+  if (artErr) throw artErr;
+  if (!art) throw new Error(`article insert returned no row tplId=${payload.templateId}`);
+  const articleId = art.id as number;
+
+  try {
+    // 3) content / summary / key_terms
+    const { error: cErr } = await supabase
+      .from("article_content")
+      .insert({ id: articleId, content });
+    if (cErr) throw cErr;
+
+    const { error: sErr } = await supabase.from("article_summary").insert({
+      article_id: articleId,
+      title_theme: payload.titleTheme,
       summary: payload.summary,
-      easyExplanation: payload.easyExplanation,
-      finalConclusion: payload.finalConclusion,
-      keyTerms: payload.keyTerms,
-    },
-    p_model: model,
-  });
-  if (error) throw error;
-  return (data as number | null) ?? null;
+      easy_explanation: payload.easyExplanation,
+      final_conclusion: payload.finalConclusion,
+      model,
+    });
+    if (sErr) throw sErr;
+
+    if (payload.keyTerms.length > 0) {
+      const { error: kErr } = await supabase.from("article_key_term").insert(
+        payload.keyTerms.map((t, i) => ({
+          article_id: articleId,
+          term: t.term,
+          explanation: t.explanation,
+          position: i + 1,
+        })),
+      );
+      if (kErr) throw kErr;
+    }
+  } catch (e) {
+    // 부분 실패 시 article 롤백 — FK CASCADE 로 content/summary/key_term 까지 정리됨.
+    await supabase.from("article").delete().eq("id", articleId);
+    throw e;
+  }
+
+  // 4) template 정리 (CASCADE 로 content_template 도 같이 삭제)
+  // template 삭제 실패는 critical 아님: 다음 cron 에서 article UNIQUE 위반으로 거부되므로 데이터 일관성은 안전.
+  const { error: dErr } = await supabase
+    .from("article_template")
+    .delete()
+    .eq("id", payload.templateId);
+  if (dErr) {
+    // eslint-disable-next-line no-console
+    console.error(
+      `[applySummary] template delete failed id=${payload.templateId}`,
+      dErr,
+    );
+  }
+
+  return articleId;
 }
