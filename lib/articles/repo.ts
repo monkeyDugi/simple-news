@@ -285,34 +285,48 @@ export async function fetchUnprocessedTemplates(
     return [];
   }
   const supabase = getSupabaseAdminClient();
-  let query = supabase
-    .from("article_template")
-    .select("id, section, title, article_content_template!inner(content)")
-    .is("processed_at", null);
-  // sections 가 비면 전체. 시간대별 분담 cron 은 일부 섹션만 넘긴다.
-  if (sections && sections.length > 0) {
-    query = query.in("section", sections);
+  // 섹션이 안 주어지면 전체 1회 query (기존 동작 호환). 주어지면 섹션별 균등 분배 (한 섹션 쏠림 방지).
+  if (!sections || sections.length === 0) {
+    const { data, error } = await supabase
+      .from("article_template")
+      .select("id, section, title, article_content_template!inner(content)")
+      .is("processed_at", null)
+      .order("section", { ascending: true })
+      .order("scraped_at", { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return (data ?? []).map(toTemplateRow);
   }
-  const { data, error } = await query
-    .order("section", { ascending: true })
-    .order("scraped_at", { ascending: false })
-    .limit(limit);
-  if (error) throw error;
 
-  return (data ?? []).map((row) => {
-    const c = row.article_content_template as
-      | { content: string }
-      | { content: string }[]
-      | null
-      | undefined;
-    const content = Array.isArray(c) ? c[0]?.content ?? "" : c?.content ?? "";
-    return {
-      id: row.id as number,
-      section: row.section as SectionCode,
-      title: String(row.title ?? ""),
-      content,
-    };
-  });
+  const perSection = Math.max(1, Math.ceil(limit / sections.length));
+  const all: TemplateRow[] = [];
+  for (const section of sections) {
+    const { data, error } = await supabase
+      .from("article_template")
+      .select("id, section, title, article_content_template!inner(content)")
+      .is("processed_at", null)
+      .eq("section", section)
+      .order("scraped_at", { ascending: false })
+      .limit(perSection);
+    if (error) throw error;
+    for (const row of data ?? []) all.push(toTemplateRow(row));
+  }
+  return all;
+}
+
+function toTemplateRow(row: Record<string, unknown>): TemplateRow {
+  const c = row.article_content_template as
+    | { content: string }
+    | { content: string }[]
+    | null
+    | undefined;
+  const content = Array.isArray(c) ? c[0]?.content ?? "" : c?.content ?? "";
+  return {
+    id: row.id as number,
+    section: row.section as SectionCode,
+    title: String(row.title ?? ""),
+    content,
+  };
 }
 
 // ───── 요약 결과 저장 (cron summarize) ───────────────────
