@@ -7,7 +7,6 @@ import { Suspense, useEffect, useState } from "react";
 import { ArticleSummary } from "@/components/ArticleSummary";
 import { ConclusionBlock } from "@/components/ConclusionBlock";
 import { EasyExplanationDialog } from "@/components/EasyExplanationDialog";
-import { KeyTermsList } from "@/components/KeyTermsList";
 import { OriginalBottomSheet } from "@/components/OriginalBottomSheet";
 import { ShareMenu } from "@/components/ShareMenu";
 import { fetchArticleDetail } from "@/lib/api/client";
@@ -101,7 +100,10 @@ function ArticleDetailContent() {
       </div>
 
       <ConclusionBlock conclusion={article.summary.finalConclusion} />
-      <ArticleSummary summary={article.summary.summary} />
+      <ArticleSummary
+        summary={article.summary.summary}
+        keyTerms={article.summary.keyTerms}
+      />
 
       <div className="px-5 pb-6">
         <button
@@ -118,8 +120,6 @@ function ArticleDetailContent() {
           <span className="text-toss-text-weak">›</span>
         </button>
       </div>
-
-      <KeyTermsList terms={article.summary.keyTerms} />
 
       <div className="px-5 pb-6">
         <button
