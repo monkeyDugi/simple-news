@@ -12,7 +12,8 @@ import {
 // docs/summarization-guide.md 의 모델 / 파라미터와 1:1 매칭.
 // 코드의 MODEL 이 단일 진리원. RPC 호출 시 p_model 로 명시 전달.
 export const MODEL = "gpt-4o-mini";
-const MAX_OUTPUT_TOKENS = 8192;
+// 10건 × ~300토큰 = ~3K 출력 가정. 8K 였을 땐 모델이 늘여 쓰며 timeout 90s 직격 → 3500 으로 컷.
+const MAX_OUTPUT_TOKENS = 3500;
 const TEMPERATURE = 0.3;
 
 // OpenAI Structured Outputs 용 JSON Schema. prompt.ts 의 zod 와 1:1 동기화.
@@ -76,8 +77,8 @@ function getClient(): OpenAI {
     cachedClient = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY ?? "",
       // SDK 기본 timeout 이 600s 라 한 배치가 hang 하면 cron 전체가 막힌다.
-      // 10건 배치 기준 정상 응답 30~60초 + 안전 여유 = 90초로 끊는다.
-      timeout: 90_000,
+      // 10건 batch 정상 30~60s + GH Actions(westus3 등) latency + 안전 여유 = 120s.
+      timeout: 120_000,
       // 자동 재시도는 batch.ts 가 batch 단위로 격리해 처리하므로 여기서는 비활성.
       // (SDK 가 429/5xx 마다 backoff 재시도하면 batch 시간이 비정상적으로 늘어남.)
       maxRetries: 0,

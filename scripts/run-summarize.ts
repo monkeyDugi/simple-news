@@ -11,7 +11,10 @@ import {
 } from "@/lib/cron/groups";
 import { summarizeAllPending } from "@/lib/summarization/batch";
 
-const BATCH_FETCH_LIMIT = 200;
+// 한 cron 호출이 가져갈 미처리 templates 상한.
+// 그룹 A 4섹션 / B 3섹션 기준 한 cron 이 5분 안에 처리할 수 있는 양으로 컷.
+// 200 으로 두니 첫 batch 부터 timeout 누적 → OpenAI APIConnectionTimeoutError 다발 발생.
+const BATCH_FETCH_LIMIT = 60;
 
 async function main() {
   const groupArg = (process.argv[2] ?? "a") as SectionGroupName;
