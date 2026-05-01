@@ -17,7 +17,10 @@ const HEADERS: HeadersInit = {
     "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 };
 
-export const REQUEST_DELAY_MS = 500;
+// 네이버 봇 보호 대응: 본문 fetch 간 sleep.
+// icn1 region 으로 옮기며 supabase latency 가 사라져 호출 간격이 1s 로 좁아지자
+// 429 다발 → 1500ms 로 늘려 네이버 입장 호출 간격 ~2s 유지.
+export const REQUEST_DELAY_MS = 1500;
 
 export function shouldMockScraper(): boolean {
   return process.env.MOCK_SCRAPER === "true";

@@ -25,7 +25,7 @@ import type { Scraper } from "./types";
 const FINANCE_LIST_URL =
   "https://finance.naver.com/news/news_list.naver?mode=LSS3D&section_id=101&section_id2=258&section_id3=403";
 
-const MAX_PER_SECTION = 30;
+const MAX_PER_SECTION = 20;
 
 export const naverFinanceScraper: Scraper = {
   source: "NAVER",

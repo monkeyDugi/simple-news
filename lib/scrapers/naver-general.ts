@@ -17,7 +17,8 @@ const NAVER_LIST_URL = (sectionId: string) =>
   `https://news.naver.com/section/${sectionId}`;
 
 // 한 섹션당 최대 처리 건수. 운영 부하 방지 + AI 요약 비용 통제.
-const MAX_PER_SECTION = 30;
+// REQUEST_DELAY_MS 1500ms 와 5분 maxDuration 안에 7섹션 다 들어가게 20 으로 컷.
+const MAX_PER_SECTION = 20;
 
 export const naverGeneralScraper: Scraper = {
   source: "NAVER",
