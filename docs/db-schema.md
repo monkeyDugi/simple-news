@@ -275,6 +275,7 @@ COMMIT;
 | `0002_indexes.sql` | 위 인덱스 4개 |
 | `0003_rls.sql` | RLS 활성화 + SELECT 정책 |
 | `0004_rpc.sql` | `upsert_article_with_summary` RPC 함수 |
+| `0005_delete_template_after_promote.sql` | 요약 완료 시 article_template 삭제 (CASCADE 로 content_template 도 정리) |
 
 ---
 
@@ -282,3 +283,4 @@ COMMIT;
 
 - **2026-04-26 v1.0**: V1 초기 스키마 (3단 요약 컬럼)
 - **2026-04-26 v1.1**: `article_summary` 단일 `summary` 컬럼으로 통합
+- **2026-05-01 v1.2**: 요약 완료 시 `article_template` 마킹 → 삭제로 전환. 디스크 누적 회피. 중복 방지는 `article.source_article_id` UNIQUE 가 담당.
