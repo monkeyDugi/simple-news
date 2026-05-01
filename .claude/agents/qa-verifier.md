@@ -88,7 +88,7 @@ SELECT AVG(cnt) FROM (
 ### 실패 시 디버깅 힌트
 
 - 네이버 봇 차단 → User-Agent 변경 시도, 요청 간격 늘림
-- Anthropic 401 → API 키 재확인, console.anthropic.com 키 활성 상태 확인
+- Gemini 401/403 → API 키 재확인, aistudio.google.com 에서 키 활성 상태 확인
 - Supabase 연결 거부 → `supabase status`로 로컬 상태 확인
 - Vercel Cron 미실행 → `vercel.json` 형식 + Production 환경변수 확인
 

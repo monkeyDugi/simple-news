@@ -63,3 +63,6 @@ next-env.d.ts
 
 # Vercel
 .vercel
+
+# 일회성 진단 스크립트 (필요 시 추가)
+scripts/test-summarize-real.ts

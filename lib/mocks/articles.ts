@@ -1387,7 +1387,7 @@ function specToBundle(spec: FixtureSpec, now: Date): MockBundle {
       summary: spec.summary,
       easyExplanation: spec.easyExplanation,
       finalConclusion: spec.finalConclusion,
-      model: "mock-claude-haiku-4-5",
+      model: "mock-gpt-4o-mini",
     },
     keyTerms: spec.keyTerms.map((kt) => ({
       term: kt.term,

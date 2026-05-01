@@ -71,10 +71,10 @@
 | 무한 스크롤 + Pull-to-Refresh | 80px threshold |
 | 상세 페이지 | titleTheme + 한 줄 결론 + 단일 문단 요약 + 쉬운 설명 + 어려운 용어 + 원문 |
 | 핵심 용어 인라인 하이라이트 | 본문 텍스트 매칭 + 클릭 팝업 |
-| 카카오톡 공유 / 링크 복사 | 기사 단위 |
+| 링크 복사 공유 | 기사 단위 (카카오톡 공유는 V2 검토) |
 | 안드로이드 웹뷰 패키징 | Capacitor + Play Store |
 | 자동 스크래핑 | 네이버 7섹션, 6시간 주기 |
-| AI 자동 요약 | Claude Haiku 4.5 |
+| AI 자동 요약 | OpenAI gpt-4o-mini |
 
 ### 3-2. V1에서 의도적으로 빠진 것
 
@@ -119,8 +119,7 @@
         ├── 어려운 용어 리스트 (keyTerms[])
         ├── [원문 기사 보기] → 바텀시트
         └── 공유 (우상단)
-            ├── 링크 복사
-            └── 카카오톡
+            └── 링크 복사
 ```
 
 ### 4-2. 섹션 구성 (확정)
@@ -179,7 +178,7 @@ Article (최종 발행본)
   → 네이버 7섹션 스크래핑 (각 섹션당 ~100건 시도)
   → 중복 필터 (source_article_id UNIQUE)
   → article_template / article_content_template INSERT
-  → 신규 N건 → AI 요약 배치 (Claude Haiku)
+  → 신규 N건 → AI 요약 배치 (OpenAI gpt-4o-mini)
   → 응답 JSON 파싱 → article / article_content / article_summary / article_key_term INSERT
   → article_template processed_at 갱신
 ```
@@ -261,9 +260,10 @@ V1 구현 시 **반드시 페이지 직접 점검 후 셀렉터 확정**. 본 PR
 
 ### 7-1. 모델
 
-- **Claude Haiku 4.5** — `claude-haiku-4-5-20251001`
-- SDK: `@anthropic-ai/sdk`
-- prompt caching 적용 (시스템 프롬프트 항상 캐시)
+- **OpenAI gpt-4o-mini** — `gpt-4o-mini`
+- SDK: `openai` (Node 공식 SDK)
+- 출력 강제: Chat Completions `response_format: { type: "json_schema", json_schema: { strict: true } }`
+- 단가: 입력 $0.15 / 1M tokens, 출력 $0.60 / 1M tokens (월 운영비 추정 $1~3)
 
 ### 7-2. 프롬프트 구조
 
@@ -331,10 +331,12 @@ JSON 스키마:
 
 | 파라미터 | 값 |
 |---|---|
-| model | `claude-haiku-4-5-20251001` |
+| model | `gpt-4o-mini` |
 | max_tokens | 8192 |
 | temperature | 0.3 |
-| system | (위 프롬프트, ephemeral cache) |
+| messages[0] (system) | (위 프롬프트) |
+| response_format | `{ type: "json_schema", strict: true }` |
+| schema wrapper | `{ summaries: [...] }` (top-level object 강제) |
 
 ### 7-5. 배치 정책
 
@@ -349,14 +351,16 @@ JSON 스키마:
 ### 7-6. Rate limit & 재시도
 
 - 429 응답 시 60초 대기 + 1회 재시도
+- 5xx 응답 시 5초 대기 + 1회 재시도
 - JSON 파싱 실패 시 배치 전체 스킵 (`processed_at` 미갱신, 다음 cron에서 재시도)
 - 일부 templateId 누락 시 다음 cron에서 재시도
 
 ### 7-7. 비용 추정
 
 - 일 신규 ~210건 → 중복 제거 후 ~150건
-- 배치 20건 × 일 ~10회 → 일 $0.35 ≈ **월 $10~12**
-- 캐시 효과 추가 절감
+- 입력 평균 1500토큰 × 일 ~150건 + 출력 평균 ~250토큰 = 일 ~280K 입력 + ~40K 출력 토큰
+- gpt-4o-mini 단가($0.15/1M 입력, $0.60/1M 출력) 기준 **월 운영비 약 $1~3**
+- OpenAI Hard Usage Limit / Prepaid 잔액으로 폭주 방지 (V1 시작 시 $5 prepaid 권장)
 
 ---
 
@@ -492,7 +496,7 @@ CREATE TABLE article_summary (
   summary           TEXT NOT NULL,             -- 단일 문단 (3~5문장)
   easy_explanation  TEXT NOT NULL,
   final_conclusion  VARCHAR(500) NOT NULL,
-  model             VARCHAR(50) NOT NULL DEFAULT 'claude-haiku-4-5-20251001',
+  model             VARCHAR(50) NOT NULL DEFAULT 'gpt-4o-mini',
   created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```
@@ -622,7 +626,7 @@ function getTimeGroup(publishedAt: Date, now: Date): string {
 
 **원문 바텀시트** — flow-pick-view 패턴 유지 (제목/언론사/기자/시간/본문 HTML).
 
-**공유** — 우상단 아이콘. 메뉴: 링크 복사 / 카카오톡(SDK).
+**공유** — 우상단 아이콘. 메뉴: 링크 복사 (V1). 카카오톡 공유는 V2 검토.
 
 ### 10-5. 라우팅
 
@@ -681,8 +685,8 @@ function getTimeGroup(publishedAt: Date, now: Date): string {
        │
    ┌───┴───┐
    ▼       ▼
-Supabase  Anthropic
-(DB)       (Claude API)
+Supabase  OpenAI
+(DB)       (Chat Completions API)
 ```
 
 ### 12-2. 환경 변수
@@ -692,10 +696,9 @@ Supabase  Anthropic
 | `NEXT_PUBLIC_SUPABASE_URL` | 클라이언트/서버 |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | 클라이언트 |
 | `SUPABASE_SECRET_KEY` | 서버 (Cron) |
-| `ANTHROPIC_API_KEY` | 서버 (요약) |
+| `OPENAI_API_KEY` | 서버 (요약) |
 | `SUMMARIZE_BATCH_SIZE` | 서버 |
 | `CRON_SECRET` | Cron 인증 |
-| `NEXT_PUBLIC_KAKAO_SDK_KEY` | 클라이언트 (공유) |
 | `NEXT_PUBLIC_API_BASE_URL` | 클라이언트 |
 
 ### 12-3. Vercel Cron
@@ -713,8 +716,8 @@ Supabase  Anthropic
 
 - Vercel Pro: $20 (Hobby로 시작 가능)
 - Supabase Free: $0
-- Anthropic Haiku: $10~15
-- **합계: 약 $30~35**
+- OpenAI gpt-4o-mini: 일 신규 ~150건 요약 기준 월 $1~3 (Hard limit / Prepaid $5 권장)
+- **합계: 약 $1~25** (Vercel Hobby 무료 + OpenAI 변동 + Supabase 무료)
 
 ---
 
@@ -748,7 +751,7 @@ Supabase  Anthropic
 | 네이버 봇 차단 | 스크래핑 중단 | UA 다양화, 간격 조절. V2 RSS 보완 |
 | AI 요약 품질 편차 | 사용자 신뢰 ↓ | 매주 샘플 100건 수동 검토, 프롬프트 튜닝 |
 | Vercel Cron 시간 한계 | 한 번에 안 끝날 수 있음 | 섹션별 분할 cron, 작은 배치 |
-| JSON 파싱 실패 | 배치 손실 | Anthropic `tool_use` 또는 prefill 패턴 |
+| JSON 파싱 실패 | 배치 손실 | OpenAI `response_format: json_schema strict` 출력 + 3단 폴백 파서 |
 | 저작권 | 본문 전체 저장 침해 우려 | V1 개인 학습용. 정식 출시 전 법무 |
 | Play Store 거절 | 정책 위반 (저작권 등) | 출처 표기, 정책 점검 |
 | 해외증시 셀렉터 미확정 | 7단계 막힘 | 진입 시 직접 페이지 점검 |
@@ -763,7 +766,7 @@ Supabase  Anthropic
 | Part | 단계 | 핵심 산출물 |
 |---|---|---|
 | 1 | Claude 아키텍처 구축 | `.claude/`, `CLAUDE.md`, `docs/`, `.gitignore` |
-| 2-0 | 환경 준비 | Node, Supabase, Anthropic, Vercel 계정/키 |
+| 2-0 | 환경 준비 | Node, Supabase, OpenAI, Vercel 계정/키 |
 | 2-1 | Next.js 스캐폴딩 | `app/`, `package.json` |
 | 2-2 | Tailwind + shadcn/ui | 토스 톤 토큰 |
 | 2-3 | Supabase 스키마 + RLS | 6테이블 + 인덱스 + RLS |
@@ -771,7 +774,7 @@ Supabase  Anthropic
 | 2-5 | API Routes (조회) | `/api/articles`, `/api/articles/[id]` |
 | 2-6 | 스크래퍼 (네이버 일반) | 6섹션 |
 | 2-7 | 스크래퍼 (네이버 finance) | 해외증시 |
-| 2-8 | AI 요약 파이프라인 | Claude Haiku + 프롬프트 + 배치 |
+| 2-8 | AI 요약 파이프라인 | OpenAI gpt-4o-mini + 프롬프트 + 배치 |
 | 2-9 | Vercel Cron | scrape, summarize |
 | 2-10 | 프론트 — 목록 화면 | 섹션 탭, 카드, 시간 그룹, Pull-to-Refresh, 무한 스크롤 |
 | 2-11 | 프론트 — 상세 화면 | 한 줄 결론 + summary + 쉬운 설명 + 어려운 용어 + 원문 바텀시트 + 공유 |
@@ -797,7 +800,7 @@ Supabase  Anthropic
 
 | 위치 | 가져올 것 |
 |---|---|
-| `internal/adapter/output/ai/gemini/prompt.json` | 프롬프트 본질 (스키마는 단일 summary로 변경) |
+| `internal/adapter/output/ai/gemini/prompt.json` | 프롬프트 본질 (모델은 OpenAI gpt-4o-mini, 스키마는 단일 summary로 변경) |
 | `shema.sql` | 4-테이블 구조 (Postgres 변환 + summary 컬럼 단일화) |
 | `internal/adapter/output/search/naver/*` | 셀렉터 매핑 (TS + cheerio 재작성) |
 | `internal/adapter/input/http/handler/article_handler.go` | API 응답 + cursor 페이지네이션 (cursor 복합 키로 개선) |
@@ -815,6 +818,8 @@ Supabase  Anthropic
 
 - **v1.0** (2026-04-26): 초기 작성. 교육형 모드 전제. 3단 요약 구조.
 - **v1.1** (2026-04-26): UI/UX 5개 결정 반영. AI 스키마 단일 summary로 변경. 협업 모드 (Claude 직접 작성)로 전환.
+- **v1.2** (2026-04-30): AI 공급자 Anthropic Claude Haiku → Google Gemini 2.5 Flash 전환 (사용자 기존 키 재활용). V1 공유 메뉴에서 카카오톡 제거 (링크 복사만).
+- **v1.3** (2026-05-01): AI 공급자 Google Gemini 2.5 Flash → OpenAI gpt-4o-mini 전환. Gemini Free tier RPD 20 한도가 일 ~150건 처리에 부족 + paid 등록 대비 OpenAI 가격($1~3/월) · 한국어 품질 모두 우수해 채택. SDK 교체(`@google/genai` → `openai`), Structured Outputs(`response_format: json_schema strict`) 채택.
 
 ---
 

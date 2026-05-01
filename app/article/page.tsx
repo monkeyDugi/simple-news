@@ -151,7 +151,6 @@ function ArticleDetailContent() {
         open={showShare}
         onClose={() => setShowShare(false)}
         title={article.summary.titleTheme || article.title}
-        description={article.summary.finalConclusion}
         url={shareUrl(article.id)}
       />
     </main>

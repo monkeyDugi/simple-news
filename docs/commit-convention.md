@@ -122,7 +122,7 @@ chore: 1단계 완료 — Next.js 스캐폴딩
 chore: 2단계 완료 — Tailwind + shadcn/ui 세팅
 feat: 3단계 — Supabase 스키마 + RLS 구축
 feat: 6단계 — 네이버 일반 6섹션 스크래퍼
-feat: 8단계 — Claude Haiku AI 요약 파이프라인
+feat: 8단계 — Gemini 2.5 Flash AI 요약 파이프라인
 ```
 
 한 단계 안에서도 논리적으로 구분되면 여러 커밋 가능.

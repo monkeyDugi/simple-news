@@ -1,14 +1,21 @@
 import type { SectionCode } from "@/lib/sections";
 import { applySummary, type TemplateRow } from "@/lib/articles/repo";
 
-import { summarizeBatch } from "./claude";
+import { summarizeBatch, MODEL } from "./openai";
 
-// 섹션별로 묶어서 Claude 에 보내는 이유:
+// 섹션별로 묶어서 OpenAI 에 보내는 이유:
 // - 한 batch 안에서만 dedup 이 동작하므로, 같은 섹션끼리 묶어야 중복 제거 정확도가 오른다.
 // - 다른 섹션 기사가 섞이면 모델이 주제를 헷갈려 하는 경향이 있다.
+// 섹션 간 / chunk 간 모두 순차 처리. 섹션 7개 동시(Promise.all) 시도는 TPM 200K 한도 안에 들어가는
+// 계산이었지만 실측에서 batch 9개 중 6~7개가 실패(429 추정) → 직렬로 회귀.
 
-const DEFAULT_BATCH_SIZE = 20;
-const BATCH_DELAY_MS = 2000;
+// 한 배치에서 모델이 생성해야 할 출력 토큰 양에 비례해 응답 시간이 늘어난다.
+// 20건 × ~300토큰 = 6K 토큰 출력이 60s 를 자주 넘겨 timeout 다발 → 10건으로 축소.
+// 10건 × ~300토큰 = ~3K 출력 ≈ 30~60s 안정.
+const DEFAULT_BATCH_SIZE = 10;
+// OpenAI 는 RPM 이 충분히 여유로워 배치 간 sleep 은 짧게 유지.
+// (gpt-4o-mini Tier 1 기준 RPM 500, TPM 200K)
+const BATCH_DELAY_MS = 1_000;
 
 function getBatchSize(): number {
   const n = Number.parseInt(process.env.SUMMARIZE_BATCH_SIZE ?? "", 10);
@@ -38,43 +45,51 @@ export async function summarizeAllPending(
   const size = getBatchSize();
 
   for (const items of groups.values()) {
-    for (const chunk of chunkArray(items, size)) {
-      report.batches += 1;
-      try {
-        const inputs = chunk.map((t) => ({
-          templateId: t.id,
-          title: t.title,
-          content: t.content,
-        }));
-        const summaries = await summarizeBatch(inputs);
-
-        const returnedIds = new Set(summaries.map((s) => s.templateId));
-        // 모델이 응답하지 않은 templateId = 중복으로 제거된 것 (가장 낮은 id 만 남김 규칙)
-        report.skippedDuplicates += chunk.length - returnedIds.size;
-
-        for (const summary of summaries) {
-          try {
-            await applySummary(summary);
-            report.summarized += 1;
-          } catch (e) {
-            report.failed += 1;
-            // eslint-disable-next-line no-console
-            console.error(
-              `[summarize] applySummary failed templateId=${summary.templateId}`,
-              e,
-            );
-          }
-        }
-      } catch (e) {
-        // batch 전체가 실패하면 모두 failed 로 집계. processed_at 갱신 X → 다음 cron 에서 재시도.
-        report.failed += chunk.length;
-        // eslint-disable-next-line no-console
-        console.error("[summarize] batch failed", e);
-      }
-      await sleep(BATCH_DELAY_MS);
-    }
+    await processSection(items, size, report);
   }
   return report;
+}
+
+async function processSection(
+  items: TemplateRow[],
+  size: number,
+  report: SummarizeReport,
+): Promise<void> {
+  for (const chunk of chunkArray(items, size)) {
+    report.batches += 1;
+    try {
+      const inputs = chunk.map((t) => ({
+        templateId: t.id,
+        title: t.title,
+        content: t.content,
+      }));
+      const summaries = await summarizeBatch(inputs);
+
+      const returnedIds = new Set(summaries.map((s) => s.templateId));
+      // 모델이 응답하지 않은 templateId = 중복으로 제거된 것 (가장 낮은 id 만 남김 규칙)
+      report.skippedDuplicates += chunk.length - returnedIds.size;
+
+      for (const summary of summaries) {
+        try {
+          await applySummary(summary, MODEL);
+          report.summarized += 1;
+        } catch (e) {
+          report.failed += 1;
+          // eslint-disable-next-line no-console
+          console.error(
+            `[summarize] applySummary failed templateId=${summary.templateId}`,
+            e,
+          );
+        }
+      }
+    } catch (e) {
+      // batch 전체가 실패하면 모두 failed 로 집계. processed_at 갱신 X → 다음 cron 에서 재시도.
+      report.failed += chunk.length;
+      // eslint-disable-next-line no-console
+      console.error("[summarize] batch failed", e);
+    }
+    await sleep(BATCH_DELAY_MS);
+  }
 }
 
 function groupBySection(rows: TemplateRow[]): Map<SectionCode, TemplateRow[]> {

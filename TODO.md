@@ -1,7 +1,9 @@
 # Simple News 진행 체크리스트
 
-> **현재 단계**: ✅ Part 1 완료 → ✅ Part 2 · 0~11단계 코드 완료 → 🚀 Part 2 · 12-13단계 (사용자 작업: Android Studio + Vercel/Play 배포)
-> **마지막 업데이트**: 2026-04-28
+> **현재 단계**: ✅ Part 1 완료 → ✅ Part 2 · 0~11단계 코드 완료 → 🌐 **웹 우선 배포 트랙** (0단계 키셋팅 → 로컬검증 → Vercel 배포 → 3일 사용) → 🤖 안드로이드(12단계)는 웹 검증 후 재개
+> **마지막 업데이트**: 2026-04-29
+>
+> **출시 순서 (사용자 결정 2026-04-29)**: 안드로이드는 비가역 작업이 많아 보류. 웹에서 데이터·요약 품질·Cron 안정성을 3일 검증한 뒤 12·13단계 진행.
 
 ---
 
@@ -40,8 +42,7 @@
 - [ ] WebStorm/VSCode + Tailwind 플러그인 (사용자)
 - [ ] Supabase CLI 설치 (`brew install supabase/tap/supabase`) + Docker Desktop (사용자)
 - [ ] Supabase 프로젝트 생성 → URL / anon key / service role key 확보 (사용자)
-- [ ] Anthropic Console (console.anthropic.com) → API 키 발급 (사용자)
-- [ ] 카카오 Developers 앱 생성 → JS 키 (사용자)
+- [ ] OpenAI Platform (platform.openai.com/api-keys) → API 키 발급 + Usage limit 또는 Prepaid 한도 설정 (사용자)
 - [ ] `CRON_SECRET` 생성 (`openssl rand -hex 32`) (사용자)
 - [ ] Vercel 계정 + GitHub 연동 (사용자)
 - [ ] Google Play Console 계정 (12단계 직전까지 OK) (사용자)
@@ -92,9 +93,9 @@
 
 ### 8단계: AI 요약 파이프라인 ✅
 
-- [x] `@anthropic-ai/sdk` 설치
+- [x] `openai` SDK 설치 (Anthropic / Gemini SDK 제거)
 - [x] `lib/summarization/prompt.ts` (SYSTEM_PROMPT + zod 스키마 + 3단 폴백 파서)
-- [x] `lib/summarization/claude.ts` (`summarizeBatch`, 캐시·재시도·모킹 토글)
+- [x] `lib/summarization/openai.ts` (`summarizeBatch`, 구조화 출력·재시도·모킹 토글)
 - [x] `lib/summarization/batch.ts` (섹션별 그룹 + chunk + sleep)
 - [x] `applySummary` RPC 호출 (repo)
 - [x] `scripts/test-summarize.ts` — 모킹 모드 검증 통과
@@ -120,7 +121,7 @@
 ### 11단계: 프론트엔드 — 상세 화면 ✅
 
 - [x] `ConclusionBlock` / `ArticleSummary` / `EasyExplanationDialog`
-- [x] `KeyTermsList` / `OriginalBottomSheet` / `ShareMenu` (카카오 + 링크 복사)
+- [x] `KeyTermsList` / `OriginalBottomSheet` / `ShareMenu` (링크 복사 only — 카카오 V2)
 - [x] `app/article/page.tsx` (정적 export 호환 위해 path 기반 → query 기반 `/article?id=N`)
 - [x] sessionStorage 스크롤 복원
 - [ ] 사용자: 모바일 실기기 확인

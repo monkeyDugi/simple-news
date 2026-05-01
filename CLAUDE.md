@@ -43,7 +43,7 @@
 
 **Simple News** — 출퇴근 5분 안에 세상 돌아가는 흐름을 파악하기 위한 미니멀 뉴스 앱.
 
-7개 섹션(정치/경제/사회/생활문화/세계/IT과학/해외증시)에서 네이버 뉴스를 자동 스크래핑 → Claude Haiku로 중복 제거 + 친근한 구어체 요약 + 핵심 용어 풀이 → 카드 리스트 + 상세 화면. 안드로이드 웹뷰 패키징(Capacitor)으로 Play Store 단독 배포.
+7개 섹션(정치/경제/사회/생활문화/세계/IT과학/해외증시)에서 네이버 뉴스를 자동 스크래핑 → OpenAI로 중복 제거 + 친근한 구어체 요약 + 핵심 용어 풀이 → 카드 리스트 + 상세 화면. 안드로이드 웹뷰 패키징(Capacitor)으로 Play Store 단독 배포.
 
 전체 스펙은 `@prd.md` 참조.
 
@@ -59,7 +59,7 @@
 | 언어 | TypeScript |
 | 스타일 | Tailwind CSS + shadcn/ui (토스 뱅킹 톤) |
 | 데이터베이스 | Supabase (PostgreSQL) |
-| AI 요약 | Anthropic Claude Haiku 4.5 (`@anthropic-ai/sdk`) |
+| AI 요약 | OpenAI gpt-4o-mini (`openai` SDK) |
 | HTML 파싱 | cheerio (스크래퍼) |
 | 스케줄러 | Vercel Cron (6시간 주기) |
 | 모바일 래핑 | Capacitor 7.x (Android only) |
@@ -102,7 +102,7 @@ simple-news/
 │   │   ├── naver-finance.ts
 │   │   └── shared.ts
 │   ├── summarization/
-│   │   ├── claude.ts
+│   │   ├── openai.ts
 │   │   ├── prompt.ts
 │   │   └── batch.ts
 │   ├── articles/{repo,service}.ts
@@ -195,7 +195,7 @@ simple-news/
 | **시간 표시** | 시간대 그룹 헤더 ("오늘 아침"/"오늘 낮"/"어젯밤"/"어제 낮"/"이틀 전"...) |
 | **상세 페이지** | titleTheme + 한 줄 결론 강조 + summary 문단 + 쉬운 설명 버튼 + 어려운 용어 리스트 + 원문 보기 |
 | **컬러 톤** | 화이트 베이스 + 토스 블루(`#3182f6`). 다크모드 V2. |
-| **공유** | 카카오톡 + 링크 복사 |
+| **공유** | 링크 복사 (V1, 카카오는 V2 검토) |
 | **Pull-to-Refresh** | 80px threshold, 구현 |
 | **무한 스크롤** | 하단 200px 진입 시 다음 페이지 |
 
@@ -238,7 +238,7 @@ git push origin main     # Vercel 자동 배포
 - `@docs/db-schema.md` — DB 테이블, RLS 정책, 인덱스
 - `@docs/api-spec.md` — API 엔드포인트, 요청/응답, 에러코드
 - `@docs/scraping-guide.md` — 네이버 스크래핑 셀렉터, User-Agent 규칙
-- `@docs/summarization-guide.md` — Claude Haiku 프롬프트, 배치, JSON 파싱
+- `@docs/summarization-guide.md` — OpenAI gpt-4o-mini 프롬프트, 배치, JSON 파싱
 - `@docs/notification-guide.md` — V2 푸시 알림 로드맵
 - `@docs/commit-convention.md` — 커밋 메시지 규칙
 - `@TODO.md` — 13단계 진행 체크리스트

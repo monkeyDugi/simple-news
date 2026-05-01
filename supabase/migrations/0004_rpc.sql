@@ -4,7 +4,7 @@
 -- 입력:
 --   p_template_id : article_template.id
 --   p_summary     : { titleTheme, summary, easyExplanation, finalConclusion, keyTerms[] }
---   p_model       : 사용한 Claude 모델 식별자
+--   p_model       : 사용한 AI 모델 식별자 (예: gpt-4o-mini)
 --
 -- 출력: 새로 생성된 article.id
 --
@@ -19,7 +19,7 @@
 CREATE OR REPLACE FUNCTION upsert_article_with_summary(
   p_template_id BIGINT,
   p_summary     JSONB,
-  p_model       VARCHAR DEFAULT 'claude-haiku-4-5-20251001'
+  p_model       VARCHAR DEFAULT 'gpt-4o-mini'
 ) RETURNS BIGINT AS $$
 DECLARE
   v_article_id BIGINT;

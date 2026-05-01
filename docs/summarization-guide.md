@@ -1,32 +1,44 @@
 # Summarization Guide — Simple News
 
-> Claude Haiku를 사용한 뉴스 요약 파이프라인 운영 가이드.
+> OpenAI gpt-4o-mini 를 사용한 뉴스 요약 파이프라인 운영 가이드.
 
 ## 모델
 
-- **Claude Haiku 4.5** — `claude-haiku-4-5-20251001`
-- SDK: `@anthropic-ai/sdk`
+- **OpenAI gpt-4o-mini** — `gpt-4o-mini`
+- SDK: `openai` (공식 Node SDK)
+- 출력 강제: Chat Completions `response_format: { type: "json_schema", json_schema: { strict: true } }`
+- 한국어 품질: 수준급 (요약·구어체 자연스러움)
+- 단가: 입력 $0.15 / 1M tokens, 출력 $0.60 / 1M tokens (실측 기준 월 운영비 $1~3)
 
 ## 파라미터
 
 ```ts
-{
-  model: 'claude-haiku-4-5-20251001',
-  max_tokens: 8192,
+await client.chat.completions.create({
+  model: "gpt-4o-mini",
+  messages: [
+    { role: "system", content: SYSTEM_PROMPT },
+    { role: "user", content: userMessage },
+  ],
+  response_format: {
+    type: "json_schema",
+    json_schema: {
+      name: "summary_batch",
+      schema: RESPONSE_SCHEMA, // lib/summarization/openai.ts
+      strict: true,
+    },
+  },
   temperature: 0.3,
-  system: [
-    {
-      type: 'text',
-      text: SYSTEM_PROMPT,
-      cache_control: { type: 'ephemeral' }
-    }
-  ]
-}
+  max_tokens: 8192,
+});
 ```
+
+`RESPONSE_SCHEMA` 는 `prompt.ts` 의 zod 스키마와 1:1 동기화. OpenAI Structured Outputs 의 strict 모드 제약 때문에 응답 배열을 `{ summaries: [...] }` 객체로 한 번 감싼다 (top-level 은 object 여야 하므로).
 
 ---
 
 ## 출력 스키마 (확정 — v1.1)
+
+각 항목 1건의 형태:
 
 ```json
 {
@@ -41,13 +53,21 @@
 }
 ```
 
+OpenAI 응답 본체는 다음과 같이 객체로 한 번 감싸 들어온다:
+
+```json
+{ "summaries": [ { ...item1 }, { ...item2 }, ... ] }
+```
+
+`openai.ts` 가 `summaries` 키를 풀어 배열만 zod 검증으로 흘려보낸다.
+
 > v1.0의 `coreSummaries.{whatHappened, impactResult, reactionIssue}` 3분할 구조는 폐기. 단일 `summary` 필드로 통합.
 
 ---
 
 ## 시스템 프롬프트 (전체)
 
-> `lib/summarization/prompt.ts`의 `SYSTEM_PROMPT` 상수.
+> `lib/summarization/prompt.ts` 의 `SYSTEM_PROMPT` 상수.
 
 ```text
 당신은 한국어 뉴스 큐레이터입니다.
@@ -70,28 +90,10 @@
 - keyTerms: 기사 이해에 필수적인 단어 최대 5개, 각각 구어체 설명.
 - 출력은 JSON 배열만. 다른 텍스트 없음.
 
-JSON 스키마:
-[
-  {
-    "templateId": 12345,
-    "titleTheme": "...",
-    "summary": "...",
-    "easyExplanation": "...",
-    "finalConclusion": "...",
-    "keyTerms": [
-      { "term": "...", "explanation": "..." }
-    ]
-  }
-]
-
-규칙:
-- 절대 부가 텍스트 출력 금지. JSON 배열만.
-- 한국어로만 출력.
-- 구어체 톤 유지 (보고서 톤 X, 친구가 설명하는 톤 O).
-- 어려운 용어는 keyTerms에 분리하지만 본문(summary)에서는 그대로 사용 가능.
-- 출처 / 기자명 / 광고 문구는 요약에 포함하지 않는다.
-- summary는 절대 항목별로 분리하지 않는다 (하나의 자연스러운 문단).
+(중략 — 자세한 규칙은 prompt.ts 참조)
 ```
+
+> 프롬프트는 "JSON 배열만" 을 명시하지만, OpenAI Structured Outputs 의 strict 모드가 객체 wrapper(`summaries`) 를 강제하므로 실제 응답은 객체로 감싸 나온다. SDK 어댑터(`openai.ts`) 가 풀어준다.
 
 ---
 
@@ -148,39 +150,64 @@ JSON 스키마:
 
 ```ts
 // lib/summarization/batch.ts
-export async function summarizeAll(templates: ArticleTemplate[]) {
-  const grouped = groupBy(templates, t => t.section);
-  for (const [section, items] of Object.entries(grouped)) {
-    for (const batch of chunk(items, BATCH_SIZE)) {
-      await summarizeBatch(batch);
-      await sleep(2000);
-    }
+export async function summarizeAllPending(templates: TemplateRow[]) {
+  const grouped = groupBySection(templates);
+  for (const items of grouped.values()) {
+    await processSection(items, BATCH_SIZE);   // 섹션 순차
+  }
+}
+
+async function processSection(items: TemplateRow[], size: number) {
+  for (const chunk of chunkArray(items, size)) {  // chunk 순차
+    const summaries = await summarizeBatch(inputs);
+    for (const s of summaries) await applySummary(s, MODEL);
+    await sleep(BATCH_DELAY_MS); // 1s
   }
 }
 ```
 
-- **배치 크기**: 환경변수 `SUMMARIZE_BATCH_SIZE` (기본 20)
-- **섹션별 그룹화 이유**: 중복 제거 정확도 ↑
+- **배치 크기**: 환경변수 `SUMMARIZE_BATCH_SIZE` (기본 10)
+- **배치 간 sleep**: `BATCH_DELAY_MS = 1_000`
+- **섹션 동시성**: 1 (직렬). v3.1 에서 7 동시 실험 → batch 9 중 6~7 실패(429 추정)로 회귀.
+- **섹션별 그룹화 이유**: 중복 제거 정확도 ↑ (다른 섹션이 섞이면 모델이 주제 헷갈림)
+- **응답 누락 templateId**: 모델이 70%+ 유사로 제거한 것 → 다음 cron 에서 재시도하지 않음 (정상 동작)
+
+### 시간대별 섹션 분담 (Hobby plan 하루 1회 제약 대응)
+
+Vercel Hobby 는 cron 1개당 **하루 1회만 트리거** 가능 (cron 갯수는 100개까지 자유). 그래서 summarize cron 을 2개로 등록하고 route 가 호출 시점 UTC hour 로 어떤 그룹을 처리할지 분기 (`app/api/cron/summarize/route.ts`):
+
+| 그룹 | cron schedule | 트리거 (KST / UTC) | 섹션 |
+|---|---|---|---|
+| **A** | `0 20 * * *` | 05:00 KST / 20:00 UTC | POLITICS, ECONOMY, SOCIETY, GLOBAL_MARKET (4) |
+| **B** | `0 21 * * *` | 06:00 KST / 21:00 UTC | LIFE, WORLD, IT (3) |
+
+분기 함수 `pickSectionsByUtcHour(hour)`: `hour === 21 → B`, 그 외(20시 트리거 + 수동 호출 폴백) `→ A`.
+
+scrape cron (`/api/cron/scrape`)은 별도 1개로 KST 03:00 (UTC 18:00, `0 18 * * *`) 에 1회. summarize 와 최소 1시간 30분 갭 (Hobby 정확도 ±59분 안전 마진).
+
+수동 트리거(curl) 시에도 호출 시점 UTC 시간 기준으로 자동 결정. 두 그룹 모두 처리하려면 시간대를 바꿔 두 번 호출.
 
 ---
 
 ## JSON 파싱 정책
 
+`response_format` strict 모드 덕에 거의 1차에서 통과. 그래도 SDK 차이·모델 변동을 대비해 3단 폴백 유지.
+
 ### 1차: 단순 `JSON.parse`
 
 ```ts
-const text = response.content[0].text.trim();
+const text = res.choices[0].message.content;
 const parsed = JSON.parse(text);
 ```
 
 ### 2차: ` ```json ` 코드블록 추출
 
 ```ts
-const match = text.match(/```json\s*([\s\S]+?)\s*```/);
+const match = text.match(/```(?:json)?\s*([\s\S]+?)\s*```/);
 if (match) parsed = JSON.parse(match[1]);
 ```
 
-### 3차: 첫 `[` ~ 마지막 `]` 추출
+### 3차: 첫 `[` ~ 마지막 `]` 추출 (배열만 반환된 경우 대비)
 
 ```ts
 const first = text.indexOf('[');
@@ -190,64 +217,62 @@ if (first !== -1 && last !== -1) {
 }
 ```
 
-### 검증 (zod)
+### 객체 wrapper 처리
 
 ```ts
-import { z } from 'zod';
-
-const summarySchema = z.object({
-  templateId: z.number(),
-  titleTheme: z.string().max(100),
-  summary: z.string().min(100).max(500),  // 최소 100자, 최대 500자
-  easyExplanation: z.string(),
-  finalConclusion: z.string().max(200),
-  keyTerms: z.array(z.object({
-    term: z.string(),
-    explanation: z.string(),
-  })).max(5),
-});
-
-const validated = z.array(summarySchema).parse(parsed);
+const arr = Array.isArray(parsed)
+  ? parsed
+  : (parsed as { summaries?: unknown }).summaries;
 ```
 
-검증 실패 = 배치 전체 스킵, `processed_at` 미갱신 → 다음 cron에서 재시도.
+### 검증 (zod)
+
+`lib/summarization/prompt.ts` 의 `summaryArraySchema` 로 최종 검증. 검증 실패 = 배치 전체 스킵, `processed_at` 미갱신 → 다음 cron 에서 재시도.
 
 ---
 
 ## DB 저장 (RPC)
 
 ```ts
-const { error } = await supabase.rpc('upsert_article_with_summary', {
-  template_ids: batch.map(b => b.templateId),
-  summaries: validated,
-});
+await applySummary(summary, MODEL);
+// 내부적으로 supabase.rpc('upsert_article_with_summary', {
+//   p_template_id, p_summary, p_model: 'gpt-4o-mini'
+// })
 ```
 
-`docs/db-schema.md`의 `upsert_article_with_summary` 함수 참조.
+`docs/db-schema.md` 의 `upsert_article_with_summary` 함수 참조.
 
 ---
 
 ## Rate Limit & 재시도
 
-### 429 응답
+### 429 (rate limit)
 ```ts
-if (error.status === 429) {
+if (status === 429) {
   await sleep(60_000);
-  return retry();
+  return retry(); // 1회만
 }
 ```
 
-1회 재시도 실패 시 다음 cron으로 미룸.
+### 5xx (server error)
+```ts
+if (status >= 500) {
+  await sleep(5_000);
+  return retry(); // 1회만
+}
+```
 
-### 5xx 응답
-- 1회 재시도, 미해결 시 배치 스킵.
+1회 재시도 실패 시 배치 전체 스킵 → 다음 cron 으로 미룸.
+
+`openai` SDK 의 `APIError` 는 `.status` 속성을 가진다. 일부 케이스에서 비어 있을 수 있어 `openai.ts` 의 `extractStatus()` 가 message 에서도 추출.
 
 ---
 
 ## 비용 추적
 
-- Vercel 로그에 매 배치마다 `tokens_in`, `tokens_out`, `latency` 기록
-- 월말 Anthropic 청구서 대조
+- Vercel 로그에 매 배치마다 `usage` 기록 (`prompt_tokens`, `completion_tokens`, `total_tokens`)
+- OpenAI 대시보드 ([platform.openai.com/usage](https://platform.openai.com/usage)) 에서 일/월 누적 확인
+- **Hard limit / Prepaid 잔액**으로 폭주 방지 (필수)
 
 ---
 
@@ -261,17 +286,14 @@ V1 운영 후 매주 샘플 100건 검토:
 4. keyTerms 적절성
 5. JSON 파싱 실패율 (1% 넘으면 프롬프트 강화)
 
-수정한 시스템 프롬프트는 버전 태그로 보관:
-
-```
-## 프롬프트 버전 history
-- v1.0 (2026-04-26): 3단 분리 구조
-- v1.1 (2026-04-26): 단일 summary 문단으로 통합
-```
-
 ---
 
 ## 변경 이력
 
 - **v1.0** (2026-04-26): 초기 (3단 구조)
 - **v1.1** (2026-04-26): 단일 summary 문단으로 통합 (사용자 결정)
+- **v2.0** (2026-04-30): AI 공급자 Anthropic Claude Haiku 4.5 → Google Gemini 2.5 Flash 전환. `responseSchema` 구조화 출력 도입.
+- **v3.0** (2026-05-01): AI 공급자 Google Gemini 2.5 Flash → OpenAI gpt-4o-mini 전환. Gemini Free tier RPD 20 한도 발견 + Paid 등록 대신 가격·품질 모두 우수한 OpenAI 채택. Structured Outputs(`response_format: json_schema strict`) + `summaries` 객체 wrapper 도입.
+- **v3.1** (2026-05-01): Cron 주기 6시간(하루 4회) → 하루 2회(KST 06:00 / 18:00 = UTC 21:00 / 09:00). 섹션 7개를 `Promise.all` 로 병렬 처리하도록 변경. 16분 직렬 → ~3분 병렬 + TPD 사용량 50% → 25%.
+- **v3.2** (2026-05-01): v3.1 의 섹션 병렬 실측에서 batch 9 중 6~7 실패(TPM 순간 초과 추정) 확인 → 직렬로 회귀. 대신 한 cron 호출이 일부 섹션만 처리하도록 시간대 분담 도입(morning 4섹션 / evening 3섹션). `fetchUnprocessedTemplates` 에 `sections` 필터 인자 추가.
+- **v3.3** (2026-05-01): Vercel Hobby 의 "cron 1개당 하루 1회" 제약 발견 (v3.1·3.2 의 `0 21,9 * * *` 표현은 deploy 실패). cron 을 3개로 분리: scrape (KST 03:00), summarize A (KST 05:00, 4섹션), summarize B (KST 06:00, 3섹션). 그룹 이름 morning/evening → A/B 로 변경.

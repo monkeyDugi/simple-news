@@ -278,16 +278,22 @@ export interface TemplateRow {
 
 export async function fetchUnprocessedTemplates(
   limit = 200,
+  sections?: SectionCode[],
 ): Promise<TemplateRow[]> {
   if (shouldMock()) {
     // 모킹 모드: insertArticleTemplate 가 templateId 를 반환하지 않으므로 cron 흐름 자체가 의미 없음.
     return [];
   }
   const supabase = getSupabaseAdminClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from("article_template")
     .select("id, section, title, article_content_template!inner(content)")
-    .is("processed_at", null)
+    .is("processed_at", null);
+  // sections 가 비면 전체. 시간대별 분담 cron 은 일부 섹션만 넘긴다.
+  if (sections && sections.length > 0) {
+    query = query.in("section", sections);
+  }
+  const { data, error } = await query
     .order("section", { ascending: true })
     .order("scraped_at", { ascending: false })
     .limit(limit);
@@ -320,7 +326,10 @@ export interface SummaryPayload {
   keyTerms: { term: string; explanation: string }[];
 }
 
-export async function applySummary(payload: SummaryPayload): Promise<number | null> {
+export async function applySummary(
+  payload: SummaryPayload,
+  model: string,
+): Promise<number | null> {
   if (shouldMock()) return null;
   const supabase = getSupabaseAdminClient();
   const { data, error } = await supabase.rpc("upsert_article_with_summary", {
@@ -332,6 +341,7 @@ export async function applySummary(payload: SummaryPayload): Promise<number | nu
       finalConclusion: payload.finalConclusion,
       keyTerms: payload.keyTerms,
     },
+    p_model: model,
   });
   if (error) throw error;
   return (data as number | null) ?? null;

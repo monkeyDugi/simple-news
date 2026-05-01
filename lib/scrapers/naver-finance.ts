@@ -14,6 +14,14 @@ import type { Scraper } from "./types";
 
 // 해외증시: 경제(101) → 증권(258) → 해외증시(403) 의 3차 분류.
 // 일반 섹션과 URL/DOM 구조가 달라서 별도 어댑터.
+//
+// 페이지 특이사항 (2026-05-01 확인):
+//  1) 응답 인코딩이 MS949 (HTML meta 는 utf-8 이라 거짓말, HTTP 헤더가 진실).
+//     shared.fetchHtml 이 charset 헤더 보고 자동 디코딩.
+//  2) 목록은 li.newsList > dl > dd.articleSubject 구조 (예전 ul.newsList li 와 다름).
+//  3) finance 의 news_read.naver URL 은 92바이트 JS 리다이렉트만 내려보낸다:
+//       <SCRIPT>top.location.href='https://n.news.naver.com/mnews/article/{office}/{article}';</SCRIPT>
+//     그래서 본문은 일반 n.news 도메인에서 #dic_area 로 가져온다.
 const FINANCE_LIST_URL =
   "https://finance.naver.com/news/news_list.naver?mode=LSS3D&section_id=101&section_id2=258&section_id3=403";
 
@@ -36,7 +44,7 @@ export const naverFinanceScraper: Scraper = {
     const out: ScrapedArticle[] = [];
     for (const item of items.slice(0, MAX_PER_SECTION)) {
       try {
-        const detail = await fetchDetail(item.link);
+        const detail = await fetchDetail(item.normalizedLink);
         if (detail) {
           out.push({
             source: "NAVER",
@@ -45,17 +53,17 @@ export const naverFinanceScraper: Scraper = {
             sourceSectionId: def.naverSectionId,
             section,
             title: item.title,
-            link: item.link,
-            thumbnailLink: null, // finance 목록에는 썸네일 거의 없음
+            link: item.normalizedLink,
+            thumbnailLink: item.thumbnail,
             publisher: detail.publisher ?? item.publisher,
-            author: null,
+            author: detail.author,
             publishedAt: detail.publishedAt ?? item.publishedAt,
             content: detail.content,
           });
         }
       } catch (e) {
         // eslint-disable-next-line no-console
-        console.error(`[naver-finance] detail fail ${item.link}`, e);
+        console.error(`[naver-finance] detail fail ${item.normalizedLink}`, e);
       }
       await sleep(REQUEST_DELAY_MS);
     }
@@ -65,7 +73,8 @@ export const naverFinanceScraper: Scraper = {
 
 interface ListItem {
   title: string;
-  link: string;
+  normalizedLink: string; // n.news.naver.com 으로 변환된 최종 본문 URL
+  thumbnail: string | null;
   publisher: string | null;
   publishedAt: Date;
   ids: { publisherId: string; articleId: string };
@@ -77,10 +86,10 @@ function parseFinanceUrl(
 ): { publisherId: string; articleId: string } | null {
   const articleMatch = url.match(/article_id=(\d+)/);
   const officeMatch = url.match(/office_id=(\d+)/);
-  if (!articleMatch) return null;
+  if (!articleMatch || !officeMatch) return null;
   return {
     articleId: articleMatch[1],
-    publisherId: officeMatch?.[1] ?? "00000",
+    publisherId: officeMatch[1],
   };
 }
 
@@ -88,50 +97,80 @@ function parseList(html: string): ListItem[] {
   const $ = load(html);
   const items: ListItem[] = [];
 
-  $("ul.newsList li").each((_, el) => {
+  $("dd.articleSubject").each((_, el) => {
     const $el = $(el);
-    const a = $el.find("dt.articleSubject a").first();
-    const link = a.attr("href") ?? "";
-    if (!link) return;
-    const fullLink = link.startsWith("http")
-      ? link
-      : `https://finance.naver.com${link}`;
+    const a = $el.find("a").first();
+    const rawLink = a.attr("href") ?? "";
+    if (!rawLink) return;
+    const fullLink = rawLink.startsWith("http")
+      ? rawLink
+      : `https://finance.naver.com${rawLink}`;
     const ids = parseFinanceUrl(fullLink);
     if (!ids) return;
-    const title = a.text().trim();
-    const publisher = $el.find("span.press").text().trim() || null;
-    const dateText = $el.find("span.wdate").text().trim();
+
+    // 본문은 어차피 n.news 로 리다이렉트되니 처음부터 그쪽 URL 로.
+    const normalizedLink = `https://n.news.naver.com/mnews/article/${ids.publisherId}/${ids.articleId}`;
+
+    const title = (a.attr("title") || a.text()).trim();
+    if (!title) return;
+
+    // dl 내부의 형제로 dd.articleSummary 가 있고 그 안에 .press / .wdate 가 있다.
+    const $dl = $el.closest("dl");
+    const summary = $dl.find("dd.articleSummary").first();
+    const publisher = summary.find(".press").first().text().trim() || null;
+    const dateText = summary.find(".wdate").first().text().trim();
     const publishedAt = parseKstToUtc(dateText) ?? new Date();
-    items.push({ title, link: fullLink, publisher, publishedAt, ids });
+
+    // 썸네일은 형제 dt.thumb > a > img.
+    const thumb = $dl.find("dt.thumb img").first();
+    const thumbnail =
+      thumb.attr("data-src") || thumb.attr("src") || null;
+
+    items.push({
+      title,
+      normalizedLink,
+      thumbnail,
+      publisher,
+      publishedAt,
+      ids,
+    });
   });
 
+  // 같은 기사가 상단/일반 영역에 중복 노출되는 경우 제거.
   const seen = new Set<string>();
   return items.filter((it) => {
-    if (seen.has(it.link)) return false;
-    seen.add(it.link);
+    if (seen.has(it.normalizedLink)) return false;
+    seen.add(it.normalizedLink);
     return true;
   });
 }
 
 interface DetailParsed {
   publisher: string | null;
+  author: string | null;
   publishedAt: Date | null;
   content: string;
 }
 
+// n.news.naver.com 본문은 일반 섹션과 동일한 #dic_area 구조.
 async function fetchDetail(url: string): Promise<DetailParsed | null> {
   const html = await fetchHtml(url);
   const $ = load(html);
-  // finance 본문은 #news_read 또는 .articleCont 둘 중 하나
-  const body = $("#news_read").length ? $("#news_read") : $(".articleCont");
-  if (body.length === 0) return null;
+  const dic = $("#dic_area");
+  if (dic.length === 0) return null;
 
-  const cleaned = cleanContent($.html(body) || "");
+  const cleaned = cleanContent($.html(dic) || "");
   if (cleaned.replace(/<[^>]+>/g, "").trim().length < 50) return null;
 
-  const publisher = $(".article_info .press").first().text().trim() || null;
-  const dateText = $(".article_info .wdate").first().text().trim();
-  const publishedAt = parseKstToUtc(dateText);
+  const publisher =
+    $(".media_end_head_top_logo img").attr("alt")?.trim() || null;
+  const author =
+    $(".media_end_head_journalist_name").first().text().trim() || null;
+  const dateRaw =
+    $(".media_end_head_info_datestamp_time").first().attr("data-date-time") ??
+    $(".media_end_head_info_datestamp_time").first().attr("datetime") ??
+    "";
+  const publishedAt = parseKstToUtc(dateRaw);
 
-  return { publisher, publishedAt, content: cleaned };
+  return { publisher, author, publishedAt, content: cleaned };
 }

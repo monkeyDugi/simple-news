@@ -1,10 +1,10 @@
 // 일회성 요약 검증 스크립트.
 // 사용법: npx tsx scripts/test-summarize.ts
 //
-// MOCK_ANTHROPIC=true 이거나 ANTHROPIC_API_KEY 가 비어 있으면 fixture 응답을 검증.
-// 실제 키가 있으면 Anthropic 1회 호출 후 응답 형식을 검증한다.
+// MOCK_OPENAI=true 이거나 OPENAI_API_KEY 가 비어 있으면 fixture 응답을 검증.
+// 실제 키가 있으면 OpenAI 1회 호출 후 응답 형식을 검증한다.
 
-import { summarizeBatch } from "@/lib/summarization/claude";
+import { summarizeBatch } from "@/lib/summarization/openai";
 import { summaryArraySchema } from "@/lib/summarization/prompt";
 
 const SAMPLE = [

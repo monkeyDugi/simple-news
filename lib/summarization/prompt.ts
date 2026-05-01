@@ -44,14 +44,14 @@ JSON 스키마:
 - 출처 / 기자명 / 광고 문구는 요약에 포함하지 않는다.
 - summary는 절대 항목별로 분리하지 않는다 (하나의 자연스러운 문단).`;
 
-// 한 batch 안에서 Claude 에 넘기는 입력. content 는 정제된 HTML 본문.
+// 한 batch 안에서 모델에 넘기는 입력. content 는 정제된 HTML 본문.
 export interface SummaryInput {
   templateId: number;
   title: string;
   content: string;
 }
 
-// Claude 에 전달하는 user 메시지. 단순 JSON dump 가 가독성·토큰 측면에서 가장 안정적.
+// 모델에 전달하는 user 메시지. 단순 JSON dump 가 가독성·토큰 측면에서 가장 안정적.
 export function buildUserMessage(items: SummaryInput[]): string {
   const payload = items.map((it) => ({
     templateId: it.templateId,

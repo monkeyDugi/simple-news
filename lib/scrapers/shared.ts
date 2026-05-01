@@ -33,6 +33,16 @@ export async function fetchHtml(url: string): Promise<string> {
   }
   const res = await fetch(url, { headers: HEADERS });
   if (!res.ok) throw new Error(`fetch ${url} failed: HTTP ${res.status}`);
+
+  // finance.naver.com 은 charset=MS949 로 내려오므로 Content-Type 을 보고 디코딩.
+  // (HTML 의 meta 태그는 utf-8 이라고 거짓말하니 HTTP 헤더가 진실원.)
+  const ct = res.headers.get("content-type") ?? "";
+  const m = ct.match(/charset=([\w-]+)/i);
+  const charset = m ? m[1].toLowerCase() : "utf-8";
+  if (charset === "euc-kr" || charset === "ms949" || charset === "cp949") {
+    const buf = await res.arrayBuffer();
+    return new TextDecoder("euc-kr").decode(buf);
+  }
   return res.text();
 }
 

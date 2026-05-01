@@ -54,7 +54,7 @@ CREATE TABLE article_summary (
   summary           TEXT NOT NULL,
   easy_explanation  TEXT NOT NULL,
   final_conclusion  VARCHAR(500) NOT NULL,
-  model             VARCHAR(50) NOT NULL DEFAULT 'claude-haiku-4-5-20251001',
+  model             VARCHAR(50) NOT NULL DEFAULT 'gpt-4o-mini',
   created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
