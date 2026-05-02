@@ -21,6 +21,8 @@ dist/
 
 # 환경변수 — 절대 커밋 금지! (단, *.example은 커밋 허용)
 .env*
+!.env
+!.env.production
 !.env.local.example
 !.env.example
 
