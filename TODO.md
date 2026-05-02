@@ -1,9 +1,25 @@
 # Simple News 진행 체크리스트
 
-> **현재 단계**: ✅ Part 1 완료 → ✅ Part 2 · 0~11단계 코드 완료 → 🌐 **웹 우선 배포 트랙** (0단계 키셋팅 → 로컬검증 → Vercel 배포 → 3일 사용) → 🤖 안드로이드(12단계)는 웹 검증 후 재개
-> **마지막 업데이트**: 2026-04-29
+> **현재 단계**: ✅ Part 1 완료 → ✅ Part 2 · 1~11단계 + 웹 배포(Vercel + GitHub Actions cron) 운영 안정화 완료 → 🤖 **다음: 12단계 안드로이드 빌드 진입**
+> **마지막 업데이트**: 2026-05-02
 >
-> **출시 순서 (사용자 결정 2026-04-29)**: 안드로이드는 비가역 작업이 많아 보류. 웹에서 데이터·요약 품질·Cron 안정성을 3일 검증한 뒤 12·13단계 진행.
+> **다음 세션 재개 지점 (사용자 결정 2026-05-02)**: 웹 트랙은 끝. 안드로이드 빌드는 다음에 시작.
+>
+> **🤖 안드로이드 트랙 시작 시 첫 두 가지 확인** (← 다음 세션에서 여기부터)
+> 1. Android Studio + SDK 설치돼 있는지 (`ls ~/Library/Android/sdk`, `which adb`)
+> 2. `.env.local`의 `NEXT_PUBLIC_API_BASE_URL`을 Vercel 프로덕션 도메인으로 변경 (정적 빌드 시점에 박힘 → 안드로이드는 localhost 못 씀)
+>
+> 둘 다 OK면 바로:
+> ```
+> npx cap add android        # android/ 폴더 생성 (한 번만)
+> npm run cap:sync           # build:static + cap sync android
+> npx cap open android       # Android Studio 빌드 → 실기기 테스트
+> ```
+>
+> **이미 끝난 것 (TODO 본문이 못 따라잡은 항목)**:
+> - 8~9단계 OpenAI 전환 + Cron을 **GitHub Actions로 이전** (네이버 봇 감지 회피)
+> - Vercel 프로덕션 배포 + 봇/timeout/parsing 픽스 안정화
+> - 12단계 사전 준비(`capacitor.config.ts`, `scripts/build-static.mjs`, `npm run cap:sync`)
 
 ---
 

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { AndroidBackHandler } from "@/components/AndroidBackHandler";
 
 export const metadata: Metadata = {
   title: "Simple News",
@@ -23,7 +24,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ko">
-      <body className="font-sans">{children}</body>
+      <body className="font-sans">
+        <AndroidBackHandler />
+        {children}
+      </body>
     </html>
   );
 }
