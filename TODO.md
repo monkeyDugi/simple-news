@@ -1,25 +1,14 @@
 # Simple News 진행 체크리스트
 
-> **현재 단계**: ✅ Part 1 완료 → ✅ Part 2 · 1~11단계 + 웹 배포(Vercel + GitHub Actions cron) 운영 안정화 완료 → 🤖 **다음: 12단계 안드로이드 빌드 진입**
+> **현재 단계**: ✅ 12단계 완료 → 🚀 **13단계: Play Store 비공개 테스트 Google 검토 승인 대기 중**
 > **마지막 업데이트**: 2026-05-02
 >
-> **다음 세션 재개 지점 (사용자 결정 2026-05-02)**: 웹 트랙은 끝. 안드로이드 빌드는 다음에 시작.
+> **다음 세션 재개 지점**: Google 검토 승인 이메일 확인 → 테스트 링크로 실기기 검증 → 프로덕션 출시
 >
-> **🤖 안드로이드 트랙 시작 시 첫 두 가지 확인** (← 다음 세션에서 여기부터)
-> 1. Android Studio + SDK 설치돼 있는지 (`ls ~/Library/Android/sdk`, `which adb`)
-> 2. `.env.local`의 `NEXT_PUBLIC_API_BASE_URL`을 Vercel 프로덕션 도메인으로 변경 (정적 빌드 시점에 박힘 → 안드로이드는 localhost 못 씀)
->
-> 둘 다 OK면 바로:
-> ```
-> npx cap add android        # android/ 폴더 생성 (한 번만)
-> npm run cap:sync           # build:static + cap sync android
-> npx cap open android       # Android Studio 빌드 → 실기기 테스트
-> ```
->
-> **이미 끝난 것 (TODO 본문이 못 따라잡은 항목)**:
-> - 8~9단계 OpenAI 전환 + Cron을 **GitHub Actions로 이전** (네이버 봇 감지 회피)
-> - Vercel 프로덕션 배포 + 봇/timeout/parsing 픽스 안정화
-> - 12단계 사전 준비(`capacitor.config.ts`, `scripts/build-static.mjs`, `npm run cap:sync`)
+> **env 구조 (중요)**
+> - `.env.local` — 로컬 dev (localhost)
+> - `.env.production` — Android/프로덕션 빌드 (news.flowpick.org). 둘 다 gitignore.
+> - Vercel 대시보드 — 서버 환경변수 별도 등록
 
 ---
 
@@ -142,29 +131,32 @@
 - [x] sessionStorage 스크롤 복원
 - [ ] 사용자: 모바일 실기기 확인
 
-### 12단계: Capacitor 안드로이드 래핑 (사전 준비 완료, Android Studio는 사용자)
+### 12단계: Capacitor 안드로이드 래핑 ✅
 
-- [x] `@capacitor/{core,cli,android,share,clipboard}` 설치
-- [x] `capacitor.config.ts` (appId=com.simplenews.app, webDir=out, androidScheme=https)
+- [x] `@capacitor/{core,cli,android,share,clipboard,app}` 설치
+- [x] `capacitor.config.ts` (appId=com.flowpick.simplenews, webDir=out, androidScheme=https)
 - [x] `scripts/build-static.mjs` (API 라우트 stash + .next 정리 + export)
 - [x] `npm run build:static` 정상 종료 검증
 - [x] `npm run cap:sync` 스크립트 (build:static → cap sync android)
-- [ ] 사용자: `npx cap add android` (Android SDK 설치 필요)
-- [ ] 사용자: `npm run cap:sync`
-- [ ] 사용자: `npx cap open android` → Android Studio 빌드
-- [ ] 사용자: APK 생성 + 실기기 테스트
+- [x] Android SDK CLI 설치 + `android/local.properties` 설정
+- [x] `npm run cap:sync` + `./gradlew assembleDebug` 성공
+- [x] 실기기 APK 설치 + 동작 확인
+- [x] PTR(Pull-to-Refresh) + 안드로이드 뒤로가기 버튼 처리
+- [x] CORS 헤더 추가 (Capacitor webview → Vercel API)
+- [x] 릴리즈 서명 키스토어 생성 + `./gradlew bundleRelease` AAB 생성
 
-### 13단계: 배포 (사용자 작업)
+### 13단계: 배포 (진행 중)
 
-- [ ] Vercel 프로젝트 연결 (사용자)
-- [ ] Production 환경변수 등록 (사용자)
-- [ ] 첫 자동 배포 + 도메인 매핑 (사용자)
-- [ ] Vercel Cron 동작 확인 24시간 모니터링 (사용자)
-- [ ] Google Play Console 앱 등록 (사용자)
-- [ ] 키스토어 생성 + 서명 (사용자)
-- [ ] AAB 생성 + 업로드 (사용자)
-- [ ] 메타데이터 업로드 (사용자)
-- [ ] 내부 테스트 → 프로덕션 출시 (사용자)
+- [x] Vercel 프로젝트 연결 + 프로덕션 배포 (news.flowpick.org)
+- [x] Production 환경변수 등록
+- [x] Vercel Cron 동작 확인 완료
+- [x] Google Play Console 앱 등록 (com.flowpick.simplenews)
+- [x] 키스토어 생성 + 릴리즈 서명
+- [x] AAB 생성 + 비공개 테스트(Alpha) 업로드
+- [x] 스토어 등록정보 입력 (설명, 스크린샷, 아이콘, 개인정보처리방침)
+- [ ] Google 검토 승인 대기 중
+- [ ] 테스트 링크로 실기기 검증 (사용자)
+- [ ] 프로덕션 출시 (사용자)
 
 ---
 
