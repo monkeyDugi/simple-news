@@ -279,6 +279,11 @@ export interface TemplateRow {
 // flowpick ReadAllGroupedBySection 패턴: 모든 미요약 template 단일 조회.
 // cron 사이클 종료 시 deleteAllArticleTemplates() 가 잔여분까지 청소하므로
 // processed_at 마킹은 더 이상 의미 없지만 컬럼/인덱스는 남겨둠 (다음 cleanup PR).
+//
+// 직전 cron 이 timeout/실패로 cleanup 전에 캔슬되면 "이미 article 로 승격된 template"
+// 이 그대로 남는다. 그걸 다시 OpenAI 로 보내면 토큰만 태우고 article INSERT 에서
+// 23505 (UNIQUE on source_article_id) 로 전부 실패한다 → 시간 누적 → 또 timeout.
+// 그래서 fetch 직후 article 테이블과 비교해 이미 있는 건 제외한다.
 export async function fetchUnprocessedTemplates(
   limit = 1000,
 ): Promise<TemplateRow[]> {
@@ -286,12 +291,22 @@ export async function fetchUnprocessedTemplates(
   const supabase = getSupabaseAdminClient();
   const { data, error } = await supabase
     .from("article_template")
-    .select("id, section, title, article_content_template!inner(content)")
+    .select(
+      "id, section, title, source_article_id, article_content_template!inner(content)",
+    )
     .order("section", { ascending: true })
     .order("scraped_at", { ascending: false })
     .limit(limit);
   if (error) throw error;
-  return (data ?? []).map(toTemplateRow);
+
+  const raw = data ?? [];
+  if (raw.length === 0) return [];
+
+  const sourceIds = raw.map((r) => String(r.source_article_id));
+  const existing = await fetchExistingArticleSourceIds(sourceIds);
+  return raw
+    .filter((r) => !existing.has(String(r.source_article_id)))
+    .map(toTemplateRow);
 }
 
 // scrape 단계 dedup: article 테이블에 이미 있는 source_article_id 집합 반환.
