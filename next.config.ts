@@ -8,10 +8,21 @@ const isStaticBuild = process.env.BUILD_TARGET === "static";
 const nextConfig: NextConfig = {
   output: isStaticBuild ? "export" : undefined,
   images: { unoptimized: true },
-  // trailingSlash 는 API 라우트에서 308 redirect 를 유발하므로 false.
-  // Capacitor 빌드는 SPA 라우팅(client-side)을 쓰므로 굳이 필요 없다.
   trailingSlash: false,
   reactStrictMode: true,
+  // Capacitor 앱(origin: https://localhost)이 Vercel API를 호출할 수 있도록 허용
+  async headers() {
+    return [
+      {
+        source: "/api/:path*",
+        headers: [
+          { key: "Access-Control-Allow-Origin", value: "*" },
+          { key: "Access-Control-Allow-Methods", value: "GET, OPTIONS" },
+          { key: "Access-Control-Allow-Headers", value: "Content-Type" },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
