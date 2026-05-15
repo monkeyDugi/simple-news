@@ -59,9 +59,9 @@
 | 언어 | TypeScript |
 | 스타일 | Tailwind CSS + shadcn/ui (토스 뱅킹 톤) |
 | 데이터베이스 | Supabase (PostgreSQL) |
-| AI 요약 | OpenAI gpt-4o-mini (`openai` SDK) |
+| AI 요약 | Claude Sonnet 4.6 via AWS Bedrock (`@anthropic-ai/bedrock-sdk`) |
 | HTML 파싱 | cheerio (스크래퍼) |
-| 스케줄러 | Vercel Cron (6시간 주기) |
+| 스케줄러 | GitHub Actions cron (KST 06/12/18 — 네이버 봇 차단 회피용 IP 풀) |
 | 모바일 래핑 | Capacitor 7.x (Android only) |
 | 배포 | Vercel + Google Play Console |
 | 패키지 매니저 | npm |
@@ -102,9 +102,8 @@ simple-news/
 │   │   ├── naver-finance.ts
 │   │   └── shared.ts
 │   ├── summarization/
-│   │   ├── openai.ts
-│   │   ├── prompt.ts
-│   │   └── batch.ts
+│   │   ├── anthropic.ts            # summarizeOne(item) 단건 호출
+│   │   └── prompt.ts
 │   ├── articles/{repo,service}.ts
 │   ├── sections.ts
 │   ├── errors.ts

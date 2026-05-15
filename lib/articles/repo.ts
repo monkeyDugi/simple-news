@@ -266,9 +266,8 @@ export async function insertArticleTemplate(payload: {
   return { inserted: true, templateId: tplRow.id as number };
 }
 
-// ───── 미요약 template 조회 (cron summarize) ──────────────
-// processed_at IS NULL 인 article_template 을 본문과 조인해 가져온다.
-// 섹션별 그룹핑은 호출자(batch.ts)에서 처리.
+// ───── 단건 template 조회/삭제 (run-summarize.ts) ────────
+// 요약은 1건씩 직렬 처리한다. 한 건 처리하고 (성공/실패 무관) 삭제 → 다음 건.
 export interface TemplateRow {
   id: number;
   section: SectionCode;
@@ -276,37 +275,41 @@ export interface TemplateRow {
   content: string;
 }
 
-// flowpick ReadAllGroupedBySection 패턴: 모든 미요약 template 단일 조회.
-// cron 사이클 종료 시 deleteAllArticleTemplates() 가 잔여분까지 청소하므로
-// processed_at 마킹은 더 이상 의미 없지만 컬럼/인덱스는 남겨둠 (다음 cleanup PR).
+// 가장 오래된(scraped_at ASC) 미처리 template 1건. 없으면 null → 루프 종료.
 //
-// 직전 cron 이 timeout/실패로 cleanup 전에 캔슬되면 "이미 article 로 승격된 template"
-// 이 그대로 남는다. 그걸 다시 OpenAI 로 보내면 토큰만 태우고 article INSERT 에서
-// 23505 (UNIQUE on source_article_id) 로 전부 실패한다 → 시간 누적 → 또 timeout.
-// 그래서 fetch 직후 article 테이블과 비교해 이미 있는 건 제외한다.
-export async function fetchUnprocessedTemplates(
-  limit = 1000,
-): Promise<TemplateRow[]> {
-  if (shouldMock()) return [];
+// 직전 cron 이 cleanup 전에 캔슬되면 "이미 article 로 승격된 template" 이
+// 남을 수 있다. 그걸 다시 모델로 보내면 토큰만 태우고 article INSERT 에서
+// 23505 (UNIQUE) 로 실패한다. 그래서 article 테이블과 source_article_id 비교로
+// 이미 승격된 건은 건너뛰며(=곧장 삭제로 처리되도록 호출자가 받아) 다음 후보를 본다.
+//
+// 단순화를 위해 여기서는 "다음 후보 1건" 만 반환하고, 호출자에서
+// applySummary 가 UNIQUE 충돌나면 catch → deleteArticleTemplate 흐름으로 해결.
+export async function fetchOldestUnprocessedTemplate(): Promise<TemplateRow | null> {
+  if (shouldMock()) return null;
   const supabase = getSupabaseAdminClient();
   const { data, error } = await supabase
     .from("article_template")
     .select(
-      "id, section, title, source_article_id, article_content_template!inner(content)",
+      "id, section, title, article_content_template!inner(content)",
     )
-    .order("section", { ascending: true })
-    .order("scraped_at", { ascending: false })
-    .limit(limit);
+    .order("scraped_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
   if (error) throw error;
+  if (!data) return null;
+  return toTemplateRow(data);
+}
 
-  const raw = data ?? [];
-  if (raw.length === 0) return [];
-
-  const sourceIds = raw.map((r) => String(r.source_article_id));
-  const existing = await fetchExistingArticleSourceIds(sourceIds);
-  return raw
-    .filter((r) => !existing.has(String(r.source_article_id)))
-    .map(toTemplateRow);
+// 단건 삭제. article_content_template 은 ON DELETE CASCADE 로 자동 정리.
+// 요약 성공/실패 무관히 호출 → "스크랩 데이터는 100% 삭제" 요건 충족.
+export async function deleteArticleTemplate(id: number): Promise<void> {
+  if (shouldMock()) return;
+  const supabase = getSupabaseAdminClient();
+  const { error } = await supabase
+    .from("article_template")
+    .delete()
+    .eq("id", id);
+  if (error) throw error;
 }
 
 // scrape 단계 dedup: article 테이블에 이미 있는 source_article_id 집합 반환.
@@ -322,20 +325,6 @@ export async function fetchExistingArticleSourceIds(
     .in("source_article_id", ids);
   if (error) throw error;
   return new Set((data ?? []).map((r) => String(r.source_article_id)));
-}
-
-// flowpick DeleteAll 패턴: 사이클 종료 시 article_template 통째로 삭제.
-// article_content_template 은 ON DELETE CASCADE 로 자동 정리.
-// 이번 사이클에서 요약 못 한 것까지 같이 버린다 (다음 사이클이 네이버에서 다시 가져옴).
-export async function deleteAllArticleTemplates(): Promise<void> {
-  if (shouldMock()) return;
-  const supabase = getSupabaseAdminClient();
-  // postgrest 는 unconditional delete 를 거부 → id >= 0 로 모든 row 매칭.
-  const { error } = await supabase
-    .from("article_template")
-    .delete()
-    .gte("id", 0);
-  if (error) throw error;
 }
 
 function toTemplateRow(row: Record<string, unknown>): TemplateRow {
@@ -357,8 +346,8 @@ function toTemplateRow(row: Record<string, unknown>): TemplateRow {
 // 응용 코드에서 직접 INSERT 흐름:
 //   1) article_template + content 조회
 //   2) article INSERT → article_content INSERT → article_summary INSERT → article_key_term INSERT
-// 부분 실패 시 article DELETE (FK CASCADE 로 후속 row 자동 정리) → 다음 사이클에서 재시도.
-// article_template 정리는 사이클 종료 시 deleteAllArticleTemplates() 가 한 번에 (flowpick DeleteAll 패턴).
+// 부분 실패 시 article DELETE (FK CASCADE 로 후속 row 자동 정리).
+// article_template 삭제는 run-summarize.ts 의 finally 블록에서 deleteArticleTemplate 로 처리.
 export interface SummaryPayload {
   templateId: number;
   titleTheme: string;

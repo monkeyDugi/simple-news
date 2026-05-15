@@ -1,18 +1,22 @@
 name: cron
 
-# flowpick 패턴 그대로: 한 cron 호출 안에서 scrape → summarize → cleanup 순차.
-# 6시간 주기 (UTC 0/6/12/18 = KST 09/15/21/03), flowpick 디폴트.
-# Vercel(AWS IP) 에서 네이버 본문 fetch 가 봇 차단(429) 받아 GitHub Actions runner(Microsoft Azure DC IP) 로 회피.
+# 구조 (사용자 결정 2026-05-15):
+#   1) scrape job 이 7섹션 네이버 본문 fetch → article_template 저장
+#   2) scrape 가 끝나면 (성공/실패 무관) summarize job 이 트리거
+#   3) summarize job 은 article_template 을 1건씩 직렬 처리, 성공/실패 무관 삭제
+#
+# 스케줄: 하루 3회 — KST 06:00 / 12:00 / 18:00 → UTC 21:00 / 03:00 / 09:00
+# (네이버 본문 fetch 봇 차단 회피를 위해 GitHub Actions runner IP 풀 사용. Vercel/AWS IP 는 자주 429 받음.)
 
 on:
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: "0 21,3,9 * * *"
   workflow_dispatch: {}
 
 jobs:
-  run:
+  scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -23,9 +27,35 @@ jobs:
 
       - run: npm ci
 
-      - name: Run cron (scrape → summarize → cleanup)
+      - name: Scrape (네이버 7섹션 → article_template)
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: npx tsx scripts/run-cron.ts
+        run: npx tsx scripts/run-scrape.ts
+
+  summarize:
+    needs: scrape
+    # if: always() — scrape 가 실패해도 summarize 트리거.
+    # scrape 가 일부만 성공해 article_template 에 잔여분이 있을 수 있고,
+    # 이전 사이클이 캔슬돼 남아있던 template 도 같이 청소해야 한다.
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Summarize (1건씩 직렬, 성공/실패 무관 template 삭제)
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          # AWS Bedrock 인증 (Anthropic Sonnet 4.6 호출용).
+          AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
+          AWS_REGION: ap-northeast-2
+        run: npx tsx scripts/run-summarize.ts
