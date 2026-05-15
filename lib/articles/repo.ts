@@ -312,6 +312,22 @@ export async function deleteArticleTemplate(id: number): Promise<void> {
   if (error) throw error;
 }
 
+// 스크랩 시작 직전 호출 — article_template 통째 삭제.
+// 직전 사이클이 timeout/캔슬되어 정리 못 한 잔존 template 을 일괄 청소한다.
+// article_content_template 은 ON DELETE CASCADE 로 자동 정리.
+// 새 스크랩은 clean slate 에서 시작 → summarize 단계의 UNIQUE 충돌 발생 자체를 막는다.
+export async function deleteAllArticleTemplates(): Promise<number> {
+  if (shouldMock()) return 0;
+  const supabase = getSupabaseAdminClient();
+  // postgrest 는 unconditional delete 를 거부 → id >= 0 로 모든 row 매칭.
+  const { error, count } = await supabase
+    .from("article_template")
+    .delete({ count: "exact" })
+    .gte("id", 0);
+  if (error) throw error;
+  return count ?? 0;
+}
+
 // scrape 단계 dedup: article 테이블에 이미 있는 source_article_id 집합 반환.
 // flowpick FilterDuplicates 와 동일 역할.
 export async function fetchExistingArticleSourceIds(
