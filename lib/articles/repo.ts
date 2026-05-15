@@ -266,50 +266,85 @@ export async function insertArticleTemplate(payload: {
   return { inserted: true, templateId: tplRow.id as number };
 }
 
-// ───── 단건 template 조회/삭제 (run-summarize.ts) ────────
-// 요약은 1건씩 직렬 처리한다. 한 건 처리하고 (성공/실패 무관) 삭제 → 다음 건.
-export interface TemplateRow {
+// ───── 단건 template claim (run-summarize.ts worker pool) ──
+// 여러 worker 가 동시에 처리하므로 race-safe claim 패턴.
+//   1) 가장 오래된 1건 SELECT (id + 모든 컬럼 + content)
+//   2) DELETE WHERE id=X RETURNING id  → 한 worker 만 성공 (PostgreSQL row lock)
+//   3) 못 받으면 retry (다른 worker 가 가져감)
+//
+// claim 시점에 template 은 이미 사라진다. 이후 summarize/applySummary 가 실패해도
+// template 은 이미 삭제됐으니 "100% 삭제" 요건 자동 충족. 잃은 건은 다음 cron 사이클이
+// 네이버에서 다시 가져온다.
+export interface ClaimedTemplate {
   id: number;
+  source: string;
+  sourcePublisherId: string | null;
+  sourceArticleId: string;
+  sourceSectionId: string | null;
   section: SectionCode;
   title: string;
+  link: string;
+  thumbnailLink: string | null;
+  publisher: string | null;
+  author: string | null;
+  publishedAt: string; // ISO string (article INSERT 에 그대로 사용)
   content: string;
 }
 
-// 가장 오래된(scraped_at ASC) 미처리 template 1건. 없으면 null → 루프 종료.
-//
-// 직전 cron 이 cleanup 전에 캔슬되면 "이미 article 로 승격된 template" 이
-// 남을 수 있다. 그걸 다시 모델로 보내면 토큰만 태우고 article INSERT 에서
-// 23505 (UNIQUE) 로 실패한다. 그래서 article 테이블과 source_article_id 비교로
-// 이미 승격된 건은 건너뛰며(=곧장 삭제로 처리되도록 호출자가 받아) 다음 후보를 본다.
-//
-// 단순화를 위해 여기서는 "다음 후보 1건" 만 반환하고, 호출자에서
-// applySummary 가 UNIQUE 충돌나면 catch → deleteArticleTemplate 흐름으로 해결.
-export async function fetchOldestUnprocessedTemplate(): Promise<TemplateRow | null> {
+export async function claimOldestTemplate(): Promise<ClaimedTemplate | null> {
   if (shouldMock()) return null;
   const supabase = getSupabaseAdminClient();
-  const { data, error } = await supabase
-    .from("article_template")
-    .select(
-      "id, section, title, article_content_template!inner(content)",
-    )
-    .order("scraped_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  if (!data) return null;
-  return toTemplateRow(data);
-}
 
-// 단건 삭제. article_content_template 은 ON DELETE CASCADE 로 자동 정리.
-// 요약 성공/실패 무관히 호출 → "스크랩 데이터는 100% 삭제" 요건 충족.
-export async function deleteArticleTemplate(id: number): Promise<void> {
-  if (shouldMock()) return;
-  const supabase = getSupabaseAdminClient();
-  const { error } = await supabase
-    .from("article_template")
-    .delete()
-    .eq("id", id);
-  if (error) throw error;
+  // race 발생 시 retry. concurrency=3 정도면 보통 1~2회 안에 성공.
+  for (let attempt = 0; attempt < 10; attempt++) {
+    // 1) 가장 오래된 1건 (full)
+    const { data: oldest, error: e1 } = await supabase
+      .from("article_template")
+      .select(
+        "id, source, source_publisher_id, source_article_id, source_section_id, section, title, link, thumbnail_link, publisher, author, published_at, article_content_template!inner(content)",
+      )
+      .order("scraped_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (e1) throw e1;
+    if (!oldest) return null; // 빈 큐
+
+    // 2) atomic claim — DELETE WHERE id=X
+    //    동일 row 를 받은 다른 worker 와 race. PostgreSQL 이 한 명만 통과시킴.
+    const { data: claimed, error: e2 } = await supabase
+      .from("article_template")
+      .delete()
+      .eq("id", oldest.id)
+      .select("id")
+      .maybeSingle();
+    if (e2) throw e2;
+    if (!claimed) continue; // 다른 worker 가 가져감 → 다음 후보 다시 시도
+
+    const contentRaw = oldest.article_content_template as
+      | { content: string }
+      | { content: string }[];
+    const content = Array.isArray(contentRaw)
+      ? contentRaw[0]?.content ?? ""
+      : contentRaw?.content ?? "";
+
+    return {
+      id: oldest.id as number,
+      source: String(oldest.source ?? "NAVER"),
+      sourcePublisherId: (oldest.source_publisher_id as string | null) ?? null,
+      sourceArticleId: String(oldest.source_article_id),
+      sourceSectionId: (oldest.source_section_id as string | null) ?? null,
+      section: oldest.section as SectionCode,
+      title: String(oldest.title ?? ""),
+      link: String(oldest.link ?? ""),
+      thumbnailLink: (oldest.thumbnail_link as string | null) ?? null,
+      publisher: (oldest.publisher as string | null) ?? null,
+      author: (oldest.author as string | null) ?? null,
+      publishedAt: String(oldest.published_at),
+      content,
+    };
+  }
+  // 10회 race retry 다 실패 → burst 상황, 일단 포기 (다음 worker 호출에서 재개)
+  return null;
 }
 
 // 스크랩 시작 직전 호출 — article_template 통째 삭제.
@@ -343,29 +378,11 @@ export async function fetchExistingArticleSourceIds(
   return new Set((data ?? []).map((r) => String(r.source_article_id)));
 }
 
-function toTemplateRow(row: Record<string, unknown>): TemplateRow {
-  const c = row.article_content_template as
-    | { content: string }
-    | { content: string }[]
-    | null
-    | undefined;
-  const content = Array.isArray(c) ? c[0]?.content ?? "" : c?.content ?? "";
-  return {
-    id: row.id as number,
-    section: row.section as SectionCode,
-    title: String(row.title ?? ""),
-    content,
-  };
-}
-
 // ───── 요약 결과 저장 (cron summarize) ───────────────────
-// 응용 코드에서 직접 INSERT 흐름:
-//   1) article_template + content 조회
-//   2) article INSERT → article_content INSERT → article_summary INSERT → article_key_term INSERT
+// claim 단계에서 template 데이터를 이미 받았으므로 여기선 article + 자식 row 만 INSERT.
+//   1) article INSERT → 2) content INSERT → 3) summary INSERT → 4) key_term INSERT
 // 부분 실패 시 article DELETE (FK CASCADE 로 후속 row 자동 정리).
-// article_template 삭제는 run-summarize.ts 의 finally 블록에서 deleteArticleTemplate 로 처리.
 export interface SummaryPayload {
-  templateId: number;
   titleTheme: string;
   summary: string;
   easyExplanation: string;
@@ -374,56 +391,40 @@ export interface SummaryPayload {
 }
 
 export async function applySummary(
+  template: ClaimedTemplate,
   payload: SummaryPayload,
   model: string,
 ): Promise<number | null> {
   if (shouldMock()) return null;
   const supabase = getSupabaseAdminClient();
 
-  // 1) template + content 조회
-  const { data: tpl, error: tplErr } = await supabase
-    .from("article_template")
-    .select(
-      "source, source_publisher_id, source_article_id, source_section_id, section, title, link, thumbnail_link, publisher, author, published_at, article_content_template!inner(content)",
-    )
-    .eq("id", payload.templateId)
-    .maybeSingle();
-  if (tplErr) throw tplErr;
-  if (!tpl) return null;
-  const contentRaw = tpl.article_content_template as
-    | { content: string }
-    | { content: string }[];
-  const content = Array.isArray(contentRaw)
-    ? contentRaw[0]?.content ?? ""
-    : contentRaw?.content ?? "";
-
-  // 2) article 승격 (RETURNING id)
+  // 1) article 승격
   const { data: art, error: artErr } = await supabase
     .from("article")
     .insert({
-      source: tpl.source,
-      source_publisher_id: tpl.source_publisher_id,
-      source_article_id: tpl.source_article_id,
-      source_section_id: tpl.source_section_id,
-      section: tpl.section,
-      title: tpl.title,
-      link: tpl.link,
-      thumbnail_link: tpl.thumbnail_link,
-      publisher: tpl.publisher,
-      author: tpl.author,
-      published_at: tpl.published_at,
+      source: template.source,
+      source_publisher_id: template.sourcePublisherId,
+      source_article_id: template.sourceArticleId,
+      source_section_id: template.sourceSectionId,
+      section: template.section,
+      title: template.title,
+      link: template.link,
+      thumbnail_link: template.thumbnailLink,
+      publisher: template.publisher,
+      author: template.author,
+      published_at: template.publishedAt,
     })
     .select("id")
     .maybeSingle();
   if (artErr) throw artErr;
-  if (!art) throw new Error(`article insert returned no row tplId=${payload.templateId}`);
+  if (!art) throw new Error(`article insert returned no row tplId=${template.id}`);
   const articleId = art.id as number;
 
   try {
-    // 3) content / summary / key_terms
+    // 2) content / summary / key_terms
     const { error: cErr } = await supabase
       .from("article_content")
-      .insert({ id: articleId, content });
+      .insert({ id: articleId, content: template.content });
     if (cErr) throw cErr;
 
     const { error: sErr } = await supabase.from("article_summary").insert({

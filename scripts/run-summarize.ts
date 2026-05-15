@@ -1,36 +1,72 @@
 // GitHub Actions cron — summarize job entry.
-// while loop 로 article_template 을 1건씩 처리:
-//   1) 가장 오래된 template 1건 SELECT  → 없으면 종료
-//   2) Bedrock 단건 요약
-//   3) try { applySummary }  catch { 무시 }
-//   4) finally: deleteArticleTemplate(id)  ← 성공/실패 무관 삭제
 //
-// 요건 (사용자 결정 2026-05-15):
-// - 배치 처리 없음, 병렬 처리 없음 (오직 1건씩 직렬)
-// - 요약 성공/실패와 무관히 스크랩 데이터(article_template) 는 100% 삭제
-// - 다음 cron 사이클이 네이버에서 다시 가져오므로 데이터 손실 의미 없음
+// worker pool (concurrency=3) 로 article_template 을 동시 처리.
+//   - 각 worker 가 독립적으로 claimOldestTemplate (atomic SELECT+DELETE) 호출
+//   - claim 성공 → Bedrock 단건 요약 → applySummary
+//   - 실패해도 template 은 claim 시점에 이미 삭제됐으니 100% 정리 보장
+//   - 모든 worker 가 빈 큐 발견 → 종료
+//
+// concurrency 는 SUMMARIZE_CONCURRENCY 환경변수로 조정 (기본 3).
+// Bedrock on-demand TPS 한도와 503 빈도를 보고 1~5 사이에서 조정.
 
 import {
   applySummary,
-  deleteArticleTemplate,
-  fetchOldestUnprocessedTemplate,
+  claimOldestTemplate,
 } from "@/lib/articles/repo";
 import { MODEL, summarizeOne } from "@/lib/summarization/anthropic";
 
+const DEFAULT_CONCURRENCY = 3;
 // 한 사이클당 처리할 최대 건수. 무한 루프 가드.
-// 7섹션 × 약 50건 = 350건 상한이면 충분.
-const MAX_ITERATIONS = 500;
+const MAX_TOTAL = 500;
+
+function getConcurrency(): number {
+  const n = Number.parseInt(process.env.SUMMARIZE_CONCURRENCY ?? "", 10);
+  if (Number.isFinite(n) && n > 0 && n <= 10) return n;
+  return DEFAULT_CONCURRENCY;
+}
+
+interface State {
+  ok: number;
+  failed: number;
+  processed: number;
+  exhausted: boolean;
+}
 
 async function main() {
   const t0 = Date.now();
-  let ok = 0;
-  let failed = 0;
-  let iter = 0;
+  const concurrency = getConcurrency();
+  const state: State = { ok: 0, failed: 0, processed: 0, exhausted: false };
 
-  while (iter < MAX_ITERATIONS) {
-    iter += 1;
-    const tpl = await fetchOldestUnprocessedTemplate();
-    if (!tpl) break;
+  console.log(`[summarize] start concurrency=${concurrency}`);
+
+  // worker pool — N개 worker 가 각자 claim-process loop. Promise.all 로 전부 종료 대기.
+  const workers = Array.from({ length: concurrency }, (_, i) =>
+    worker(i, state),
+  );
+  await Promise.all(workers);
+
+  console.log(
+    "[summarize] done",
+    JSON.stringify({
+      elapsedMs: Date.now() - t0,
+      concurrency,
+      processed: state.processed,
+      ok: state.ok,
+      failed: state.failed,
+    }),
+  );
+}
+
+async function worker(idx: number, state: State): Promise<void> {
+  while (!state.exhausted && state.processed < MAX_TOTAL) {
+    const tpl = await claimOldestTemplate();
+    if (!tpl) {
+      // 빈 큐 발견 — 다른 worker 에게도 신호. retry 무한 루프 방지.
+      state.exhausted = true;
+      break;
+    }
+    state.processed += 1;
+    const myIter = state.processed;
 
     try {
       const summary = await summarizeOne({
@@ -38,8 +74,8 @@ async function main() {
         content: tpl.content,
       });
       await applySummary(
+        tpl,
         {
-          templateId: tpl.id,
           titleTheme: summary.titleTheme,
           summary: summary.summary,
           easyExplanation: summary.easyExplanation,
@@ -48,42 +84,22 @@ async function main() {
         },
         MODEL,
       );
-      ok += 1;
+      state.ok += 1;
     } catch (e) {
-      failed += 1;
-      // 한 건 실패는 사이클을 막지 않는다. 어차피 finally 에서 template 은 삭제.
+      state.failed += 1;
+      // claim 시점에 template 은 이미 삭제됐으므로 추가 정리 불필요.
       console.error(
-        `[summarize] failed id=${tpl.id} section=${tpl.section}`,
+        `[summarize] w${idx} failed id=${tpl.id} section=${tpl.section}`,
         e instanceof Error ? e.message : e,
       );
-    } finally {
-      // 요건: 요약 트리거가 걸리면 스크랩 데이터는 100% 삭제.
-      try {
-        await deleteArticleTemplate(tpl.id);
-      } catch (e) {
-        // template 삭제 실패는 드물지만, 다음 사이클 부담을 막기 위해 로깅만.
-        console.error(
-          `[summarize] template delete failed id=${tpl.id}`,
-          e instanceof Error ? e.message : e,
-        );
-      }
     }
 
-    if (iter % 10 === 0) {
+    if (myIter % 10 === 0) {
       console.log(
-        `[summarize] progress iter=${iter} ok=${ok} failed=${failed}`,
+        `[summarize] progress processed=${state.processed} ok=${state.ok} failed=${state.failed}`,
       );
     }
   }
-
-  if (iter >= MAX_ITERATIONS) {
-    console.warn(`[summarize] hit MAX_ITERATIONS=${MAX_ITERATIONS} — 잔여 template 다음 사이클로`);
-  }
-
-  console.log(
-    "[summarize] done",
-    JSON.stringify({ elapsedMs: Date.now() - t0, ok, failed, iter }),
-  );
 }
 
 main().catch((e) => {
