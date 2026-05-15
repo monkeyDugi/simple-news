@@ -40,7 +40,9 @@ jobs:
     # 이전 사이클이 캔슬돼 남아있던 template 도 같이 청소해야 한다.
     if: always()
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # 단건 직렬 + 평균 ~10초/건 + 한 사이클 100건 안팎 = 약 17분.
+    # 25분이면 정상 완주 가능 + hang 시 빨리 잘림.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
